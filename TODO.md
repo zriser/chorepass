@@ -61,7 +61,7 @@ _Companion to `PLAN.md`. Numbered sequentially — later items depend on earlier
 ### Phase F — Deploy
 - [x] 22. Dockerfile is multi-stage (web-build → server-build → server-deps → runtime). Compose has TZ + `./data` volume mount. Builds need a smoke `docker build .` before Portainer
 - [x] 23. `.env.example` cleaned: removed dead `PARENT_PIN_HASH` field (code reads from DB), kept all real keys with sensible defaults
-- [ ] 24. Push to GitHub (personal: `zriser/chore-app`)
+- [x] 24. Pushed to GitHub: `zriser/chore-app` (private)
 - [ ] 25. Deploy as Portainer stack from Git
 - [ ] 26. NPM proxy host `chores.zachriser.com` → `192.168.1.172:3000`, force SSL, LAN-only ACL
 - [ ] 27. Smoke test from a kid device on Wi-Fi
