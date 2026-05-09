@@ -63,7 +63,7 @@ _Companion to `PLAN.md`. Numbered sequentially — later items depend on earlier
 - [x] 23. `.env.example` cleaned: removed dead `PARENT_PIN_HASH` field (code reads from DB), kept all real keys with sensible defaults
 - [x] 24. Pushed to GitHub: `zriser/chore-app` (private)
 - [x] 25. Deployed at `/opt/stacks/chore-app/` on `192.168.1.172` (matching the existing /opt/stacks pattern, not Portainer-from-Git). GitHub deploy key for the docker host registered as read-only on the repo. Compose uses `${VAR:?msg}` substitution, secrets in `/opt/stacks/chore-app/.env` (chmod 600). Dev DB scp'd to prod data volume (Zoe + Caleb + 4 chores + parent PIN preserved). Container reachable at `http://192.168.1.172:3000/`. Pi-hole + UniFi reachability from container confirmed (both 200 from /api/auth).
-- [ ] 26. NPM proxy host `chores.zachriser.com` → `192.168.1.172:3000`, force SSL, LAN-only ACL
+- [x] 26. NPM proxy host `chores.zachriser.com` → `192.168.1.172:3000` with force-SSL + LAN-only ACL; pi-hole local DNS resolves the hostname to the docker server. Verified: 200 from `https://chores.zachriser.com/api/health` returns `{ok:true, kids:2}`.
 - [ ] 27. Smoke test from a kid device on Wi-Fi
 
 ### Phase G — Rollout
