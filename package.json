@@ -1,0 +1,16 @@
+{
+  "name": "chore-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Family chore tracker that gates kids' internet via Pi-hole + UniFi",
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix web install",
+    "dev": "concurrently -n server,web -c blue,magenta \"npm --prefix server run dev\" \"npm --prefix web run dev\"",
+    "build": "npm --prefix web run build && npm --prefix server run build",
+    "migrate": "npm --prefix server run migrate",
+    "seed": "npm --prefix server run seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

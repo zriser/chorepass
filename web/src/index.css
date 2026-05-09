@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: #fff7e8;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(31, 22, 17, 0.07) 1px, transparent 0);
+  background-size: 22px 22px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer components {
+  /* Sticker — chunky cartoon card. The visual primitive. */
+  .sticker {
+    @apply bg-paper border-3 border-ink rounded-3xl shadow-sticker;
+  }
+  .sticker-lg {
+    @apply bg-paper border-3 border-ink rounded-[2rem] shadow-sticker-lg;
+  }
+  .sticker-press {
+    @apply transition-[transform,box-shadow] duration-75 active:translate-x-[2px] active:translate-y-[2px] active:shadow-sticker-press;
+  }
+
+  /* Form input — kept readable on the cream paper. */
+  .input {
+    @apply w-full bg-white border-3 border-ink rounded-xl px-3 py-2 text-ink font-body
+      placeholder:text-ink/40 focus:outline-none focus:ring-0 focus:shadow-sticker-sm
+      focus:translate-x-[-1px] focus:translate-y-[-1px] transition-[transform,box-shadow];
+  }
+  .input-mono {
+    @apply input font-mono text-sm;
+  }
+
+  /* Pill — small chunky button. */
+  .pill {
+    @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border-3 border-ink
+      bg-paper text-ink text-sm font-display font-semibold shadow-sticker-sm
+      sticker-press select-none;
+  }
+
+  /* Tab — chunky pill that flips colors when active. */
+  .tab {
+    @apply px-4 py-2 rounded-full border-3 border-ink font-display font-semibold whitespace-nowrap
+      transition-transform sticker-press;
+  }
+
+  /* Header banner */
+  .ribbon {
+    @apply bg-sunshine border-3 border-ink rounded-2xl px-4 py-2 shadow-sticker-sm font-display font-semibold;
+  }
+}
+
+/* Decorative star bullet used in some lists / progress dots */
+.star-bullet::before {
+  content: "★";
+  display: inline-block;
+  margin-right: 0.4em;
+  color: #ffc93c;
+  text-shadow: 1px 1px 0 #1f1611;
+}
+
+/* Confetti bits — animated by inline styles. */
+.confetti-bit {
+  position: absolute;
+  width: 14px;
+  height: 18px;
+  border-radius: 3px;
+  border: 2px solid #1f1611;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* Diagonal candy stripes used as accent backgrounds */
+.candy-stripes {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0,
+    transparent 8px,
+    rgba(31, 22, 17, 0.08) 8px,
+    rgba(31, 22, 17, 0.08) 16px
+  );
+}
+
+/* Notebook ruled-line accent */
+.notebook-lines {
+  background-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(1.6rem - 1px),
+    rgba(43, 183, 196, 0.25) calc(1.6rem - 1px),
+    rgba(43, 183, 196, 0.25) 1.6rem
+  );
+  background-size: 100% 1.6rem;
+}

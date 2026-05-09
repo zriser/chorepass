@@ -1,0 +1,12 @@
+services:
+  chore-app:
+    build: .
+    container_name: chore-app
+    restart: unless-stopped
+    environment:
+      TZ: America/New_York
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    env_file: .env

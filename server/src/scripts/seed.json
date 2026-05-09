@@ -1,0 +1,24 @@
+{
+  "kids": [
+    {
+      "name": "Zoe",
+      "slug": "zoe",
+      "avatar": null,
+      "bedtime": "20:00",
+      "macs": [
+        { "mac": "06:4d:28:af:f7:da", "label": "primary" }
+      ]
+    },
+    {
+      "name": "Caleb",
+      "slug": "caleb",
+      "avatar": null,
+      "bedtime": "22:00",
+      "macs": [
+        { "mac": "50:ee:32:98:18:fd", "label": "device 1" },
+        { "mac": "e2:1c:c6:e5:5d:ce", "label": "device 2" }
+      ]
+    }
+  ],
+  "chores": []
+}

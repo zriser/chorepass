@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+*.log
+.env
+.env.local
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/avatars/
+.DS_Store
+.vscode/
+.idea/
+coverage/
+*.tsbuildinfo
