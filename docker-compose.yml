@@ -1,12 +1,42 @@
+# chore-app stack.
+#
+# Secrets are injected at deploy time from the Portainer stack's
+# "Environment variables" panel — there is no .env file on disk.
+#
+# Required env vars (set these in Portainer when creating the stack):
+#   SESSION_SECRET        long random string for signed cookies
+#   PARENT_PIN_DEFAULT    seed PIN, only used on first boot to hash into the DB
+#   PIHOLE_HOST           e.g. https://192.168.1.254
+#   PIHOLE_PW             Pi-hole v6 application password
+#   UNIFI_HOST            e.g. https://192.168.1.10
+#   UNIFI_USER            UniFi local-admin username (chore-bot)
+#   UNIFI_PW              UniFi local-admin password
+#
+# Compose will refuse to start if any of these are unset/empty
+# (the ${VAR:?msg} form fails fast with a clear error).
 services:
   chore-app:
     build: .
     container_name: chore-app
     restart: unless-stopped
-    environment:
-      TZ: America/New_York
     ports:
       - "3000:3000"
     volumes:
       - ./data:/app/data
-    env_file: .env
+    environment:
+      # Non-secret defaults — fine to commit
+      TZ: America/New_York
+      DB_PATH: /app/data/chores.db
+      HISTORY_RETENTION_DAYS: "90"
+      PIHOLE_UNBLOCKED_GROUP: Kids_Unblocked
+      PIHOLE_BLOCKED_GROUP: Kids_Blocked
+      UNIFI_SITE: default
+
+      # Secrets — must be supplied via Portainer stack env vars
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      PARENT_PIN_DEFAULT: ${PARENT_PIN_DEFAULT:?PARENT_PIN_DEFAULT is required}
+      PIHOLE_HOST: ${PIHOLE_HOST:?PIHOLE_HOST is required}
+      PIHOLE_PW: ${PIHOLE_PW:?PIHOLE_PW is required}
+      UNIFI_HOST: ${UNIFI_HOST:?UNIFI_HOST is required}
+      UNIFI_USER: ${UNIFI_USER:?UNIFI_USER is required}
+      UNIFI_PW: ${UNIFI_PW:?UNIFI_PW is required}
