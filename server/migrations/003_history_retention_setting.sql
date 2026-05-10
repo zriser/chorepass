@@ -1,0 +1,3 @@
+-- history_retention_days lives in settings now; first-boot value is seeded
+-- in code from HISTORY_RETENTION_DAYS env (else 90) so existing deploys
+-- keep their configured value when this migration runs.

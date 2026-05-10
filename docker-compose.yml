@@ -27,6 +27,7 @@ services:
       # Non-secret defaults — fine to commit
       TZ: America/New_York
       DB_PATH: /app/data/chores.db
+      # First-boot seed only — after first boot, manage retention via Settings UI.
       HISTORY_RETENTION_DAYS: "90"
       PIHOLE_UNBLOCKED_GROUP: Kids_Unblocked
       PIHOLE_BLOCKED_GROUP: Kids_Blocked

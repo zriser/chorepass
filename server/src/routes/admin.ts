@@ -5,6 +5,11 @@ import { requireParent } from "../middleware/requireParent.js";
 import { shouldBeUnlocked } from "../services/unlockRule.js";
 import { gate } from "../services/gate.js";
 import { scheduler } from "../services/scheduler.js";
+import {
+  getHistoryRetentionDays,
+  historyRetentionLimits,
+  setHistoryRetentionDays,
+} from "../services/settings.js";
 import { todayISO } from "../util/date.js";
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -101,6 +106,24 @@ router.put("/morning-reset-time", (req, res) => {
   ).run(time);
   const applied = scheduler.reloadDailyReset();
   res.json({ ok: true, time: applied });
+});
+
+router.get("/history-retention-days", (_req, res) => {
+  res.json({
+    days: getHistoryRetentionDays(),
+    min: historyRetentionLimits.min,
+    max: historyRetentionLimits.max,
+  });
+});
+
+router.put("/history-retention-days", (req, res) => {
+  const days = Number(req.body?.days);
+  try {
+    const applied = setHistoryRetentionDays(days);
+    res.json({ ok: true, days: applied });
+  } catch (e: any) {
+    res.status(400).json({ error: String(e?.message ?? e) });
+  }
 });
 
 router.get("/gate-log", (req, res) => {

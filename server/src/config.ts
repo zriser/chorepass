@@ -25,7 +25,6 @@ export const config = {
   tz: process.env.TZ ?? "America/New_York",
   sessionSecret: required("SESSION_SECRET", "dev-secret-change-me"),
   dbPath: process.env.DB_PATH ?? path.resolve(process.cwd(), "../data/chores.db"),
-  historyRetentionDays: Number(process.env.HISTORY_RETENTION_DAYS ?? 90),
   parentPinDefault: process.env.PARENT_PIN_DEFAULT ?? "0000",
   pihole: {
     host: process.env.PIHOLE_HOST ?? "",

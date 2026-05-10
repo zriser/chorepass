@@ -11,11 +11,13 @@ import completionsRouter from "./routes/completions.js";
 import authRouter, { ensureParentPin } from "./routes/auth.js";
 import adminRouter from "./routes/admin.js";
 import { scheduler } from "./services/scheduler.js";
+import { seedHistoryRetentionDays } from "./services/settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const ran = runMigrations();
 if (ran.length) console.log(`[db] applied migrations: ${ran.join(", ")}`);
+seedHistoryRetentionDays(process.env.HISTORY_RETENTION_DAYS);
 ensureParentPin();
 scheduler.start();
 

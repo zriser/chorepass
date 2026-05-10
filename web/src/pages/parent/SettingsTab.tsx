@@ -6,8 +6,119 @@ export default function SettingsTab() {
     <div className="space-y-6">
       <h2 className="font-display font-bold text-2xl">settings</h2>
       <MorningResetSection />
+      <HistoryRetentionSection />
       <ChangePinSection />
       <DeployConfigSection />
+    </div>
+  );
+}
+
+function HistoryRetentionSection() {
+  const [days, setDays] = useState<string>("");
+  const [original, setOriginal] = useState<number | null>(null);
+  const [limits, setLimits] = useState<{ min: number; max: number }>({ min: 1, max: 3650 });
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.get<{ days: number; min: number; max: number }>(
+          "/api/admin/history-retention-days",
+        );
+        setDays(String(r.days));
+        setOriginal(r.days);
+        setLimits({ min: r.min, max: r.max });
+      } catch (e: any) {
+        setError(String(e.message ?? e));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const submit = async () => {
+    setError(null);
+    setDone(false);
+    const n = Number(days);
+    if (!Number.isInteger(n) || n < limits.min || n > limits.max) {
+      setError(`days must be a whole number between ${limits.min} and ${limits.max}`);
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.put<{ ok: true; days: number }>(
+        "/api/admin/history-retention-days",
+        { days: n },
+      );
+      setOriginal(r.days);
+      setDays(String(r.days));
+      setDone(true);
+    } catch (e: any) {
+      setError(e instanceof ApiError ? e.message : String(e.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const dirty = original !== null && Number(days) !== original;
+
+  return (
+    <div className="sticker-lg bg-paper-deep p-6 max-w-md">
+      <h3 className="font-display font-bold text-xl mb-1">history retention</h3>
+      <p className="font-body text-sm text-ink-soft mb-5">
+        completions and gate-log rows older than this are pruned every night at 2am.
+      </p>
+
+      {loading ? (
+        <div className="font-display text-ink-soft/60">loading…</div>
+      ) : (
+        <>
+          <label className="block">
+            <span className="block font-display font-semibold text-ink-soft text-sm mb-1">
+              keep last
+            </span>
+            <div className="flex items-baseline gap-2">
+              <input
+                type="number"
+                inputMode="numeric"
+                min={limits.min}
+                max={limits.max}
+                value={days}
+                onChange={(e) => {
+                  setDays(e.target.value);
+                  setDone(false);
+                }}
+                className="input font-mono text-lg w-28"
+              />
+              <span className="font-body text-ink-soft">days</span>
+            </div>
+          </label>
+
+          {error && (
+            <div className="mt-4 sticker bg-tangerine text-paper px-4 py-2 font-display animate-shake-x">
+              {error}
+            </div>
+          )}
+          {done && (
+            <div className="mt-4 sticker bg-mint text-ink px-4 py-2 font-display animate-pop-in">
+              saved ✓
+            </div>
+          )}
+
+          <div className="mt-5 flex gap-3">
+            <button
+              onClick={submit}
+              disabled={busy || !dirty}
+              className="pill bg-mint text-ink disabled:opacity-50"
+            >
+              {busy ? "saving…" : "save"}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
