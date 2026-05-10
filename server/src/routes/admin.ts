@@ -3,7 +3,10 @@ import { db } from "../db.js";
 import { requireParent } from "../middleware/requireParent.js";
 import { shouldBeUnlocked } from "../services/unlockRule.js";
 import { gate } from "../services/gate.js";
+import { scheduler } from "../services/scheduler.js";
 import { todayISO } from "../util/date.js";
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const router = Router();
 router.use(requireParent);
@@ -62,6 +65,26 @@ router.get("/gate-status", (_req, res) => {
     };
   });
   res.json(status);
+});
+
+router.get("/morning-reset-time", (_req, res) => {
+  const row = db
+    .prepare("SELECT value FROM settings WHERE key = 'morning_reset_time'")
+    .get() as { value: string } | undefined;
+  res.json({ time: row?.value ?? "06:00" });
+});
+
+router.put("/morning-reset-time", (req, res) => {
+  const time = String(req.body?.time ?? "");
+  if (!TIME_RE.test(time)) {
+    return res.status(400).json({ error: "time must be HH:MM (24-hour)" });
+  }
+  db.prepare(
+    `INSERT INTO settings (key, value) VALUES ('morning_reset_time', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(time);
+  const applied = scheduler.reloadDailyReset();
+  res.json({ ok: true, time: applied });
 });
 
 router.get("/gate-log", (req, res) => {
