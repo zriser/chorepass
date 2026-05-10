@@ -4,7 +4,11 @@ import { config } from "../config.js";
 import { gate } from "./gate.js";
 import { todayISO } from "../util/date.js";
 
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DEFAULT_RESET_TIME = "06:00";
+
 const kidJobs = new Map<number, ScheduledTask>();
+let dailyResetJob: ScheduledTask | null = null;
 
 function scheduleKidBedtime(kidId: number, bedtime: string): boolean {
   const m = bedtime.match(/^(\d{1,2}):(\d{2})$/);
@@ -38,15 +42,31 @@ export function reloadKidJobs(): number {
   return registered;
 }
 
-function startDailyReset() {
-  cron.schedule(
-    "0 6 * * *",
+function getMorningResetTime(): string {
+  const row = db
+    .prepare("SELECT value FROM settings WHERE key = 'morning_reset_time'")
+    .get() as { value: string } | undefined;
+  const value = row?.value ?? DEFAULT_RESET_TIME;
+  if (!TIME_RE.test(value)) {
+    console.warn(
+      `[scheduler] invalid morning_reset_time "${value}" in settings, falling back to ${DEFAULT_RESET_TIME}`,
+    );
+    return DEFAULT_RESET_TIME;
+  }
+  return value;
+}
+
+function scheduleDailyReset(time: string) {
+  const [hh, mm] = time.split(":").map(Number);
+  const expr = `${mm} ${hh} * * *`;
+  dailyResetJob = cron.schedule(
+    expr,
     async () => {
       const date = todayISO();
       const removed = db
         .prepare("DELETE FROM completions WHERE completed_date = ?")
         .run(date).changes;
-      console.log(`[scheduler] morning reset ${date} — cleared ${removed} completions`);
+      console.log(`[scheduler] morning reset ${date} (${time}) — cleared ${removed} completions`);
       const results = await gate.blockAll("schedule");
       const failed = results.filter((r) => !r.ok);
       if (failed.length) {
@@ -57,6 +77,17 @@ function startDailyReset() {
     },
     { timezone: config.tz },
   );
+}
+
+export function reloadDailyReset(): string {
+  if (dailyResetJob) {
+    dailyResetJob.stop();
+    dailyResetJob = null;
+  }
+  const time = getMorningResetTime();
+  scheduleDailyReset(time);
+  console.log(`[scheduler] daily reset scheduled for ${time}`);
+  return time;
 }
 
 function startPrune() {
@@ -82,10 +113,10 @@ function startPrune() {
 }
 
 export function start() {
-  startDailyReset();
+  reloadDailyReset();
   startPrune();
   reloadKidJobs();
   console.log(`[scheduler] started (tz=${config.tz})`);
 }
 
-export const scheduler = { start, reloadKidJobs };
+export const scheduler = { start, reloadKidJobs, reloadDailyReset };

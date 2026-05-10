@@ -1,11 +1,112 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "../../api.js";
 
 export default function SettingsTab() {
   return (
     <div className="space-y-6">
       <h2 className="font-display font-bold text-2xl">settings</h2>
+      <MorningResetSection />
       <ChangePinSection />
+    </div>
+  );
+}
+
+function MorningResetSection() {
+  const [time, setTime] = useState<string>("");
+  const [original, setOriginal] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await api.get<{ time: string }>("/api/admin/morning-reset-time");
+        setTime(r.time);
+        setOriginal(r.time);
+      } catch (e: any) {
+        setError(String(e.message ?? e));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const submit = async () => {
+    setError(null);
+    setDone(false);
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+      setError("time must be HH:MM (24-hour)");
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.put<{ ok: true; time: string }>(
+        "/api/admin/morning-reset-time",
+        { time },
+      );
+      setOriginal(r.time);
+      setTime(r.time);
+      setDone(true);
+    } catch (e: any) {
+      setError(e instanceof ApiError ? e.message : String(e.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const dirty = time !== original;
+
+  return (
+    <div className="sticker-lg bg-paper-deep p-6 max-w-md">
+      <h3 className="font-display font-bold text-xl mb-1">morning reset time</h3>
+      <p className="font-body text-sm text-ink-soft mb-5">
+        every day at this time, completions reset and all kids get blocked until
+        chores are done.
+      </p>
+
+      {loading ? (
+        <div className="font-display text-ink-soft/60">loading…</div>
+      ) : (
+        <>
+          <label className="block">
+            <span className="block font-display font-semibold text-ink-soft text-sm mb-1">
+              reset at
+            </span>
+            <input
+              type="time"
+              value={time}
+              onChange={(e) => {
+                setTime(e.target.value);
+                setDone(false);
+              }}
+              className="input font-mono text-lg"
+            />
+          </label>
+
+          {error && (
+            <div className="mt-4 sticker bg-tangerine text-paper px-4 py-2 font-display animate-shake-x">
+              {error}
+            </div>
+          )}
+          {done && (
+            <div className="mt-4 sticker bg-mint text-ink px-4 py-2 font-display animate-pop-in">
+              saved ✓
+            </div>
+          )}
+
+          <div className="mt-5 flex gap-3">
+            <button
+              onClick={submit}
+              disabled={busy || !dirty}
+              className="pill bg-mint text-ink disabled:opacity-50"
+            >
+              {busy ? "saving…" : "save"}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
