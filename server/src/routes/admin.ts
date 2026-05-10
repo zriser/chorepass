@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "../db.js";
+import { config } from "../config.js";
 import { requireParent } from "../middleware/requireParent.js";
 import { shouldBeUnlocked } from "../services/unlockRule.js";
 import { gate } from "../services/gate.js";
@@ -48,7 +49,8 @@ router.get("/gate-status", (_req, res) => {
     slug: string;
   }[];
   const latest = db.prepare(
-    `SELECT action, created_at FROM gate_log
+    `SELECT action, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+       FROM gate_log
       WHERE kid_id = ?
       ORDER BY id DESC LIMIT 1`,
   );
@@ -65,6 +67,20 @@ router.get("/gate-status", (_req, res) => {
     };
   });
   res.json(status);
+});
+
+router.get("/deploy-config", (_req, res) => {
+  res.json({
+    tz: config.tz,
+    pihole: {
+      unblockedGroup: config.pihole.unblockedGroup,
+      blockedGroup: config.pihole.blockedGroup,
+    },
+    unifi: {
+      host: config.unifi.host,
+      site: config.unifi.site,
+    },
+  });
 });
 
 router.get("/morning-reset-time", (_req, res) => {
@@ -97,7 +113,8 @@ router.get("/gate-log", (req, res) => {
   const rows = db
     .prepare(
       `SELECT gl.id, gl.kid_id, k.name AS kid_name, gl.action, gl.source,
-              gl.pihole_ok, gl.unifi_ok, gl.error, gl.created_at
+              gl.pihole_ok, gl.unifi_ok, gl.error,
+              strftime('%Y-%m-%dT%H:%M:%SZ', gl.created_at) AS created_at
          FROM gate_log gl
          LEFT JOIN kids k ON k.id = gl.kid_id
          ${where}

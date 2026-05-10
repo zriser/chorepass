@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type GateStatus } from "../../api.js";
+import { formatLocalDateTime } from "../../format.js";
 
 export default function TodayTab() {
   const [rows, setRows] = useState<GateStatus[] | null>(null);
@@ -94,7 +95,7 @@ export default function TodayTab() {
               </div>
               {r.lastAction && (
                 <div className="font-mono text-xs text-ink-soft/60 mt-1">
-                  last: {r.lastAction} @ {r.lastActionAt}
+                  last: {r.lastAction} @ {formatLocalDateTime(r.lastActionAt)}
                 </div>
               )}
             </div>
