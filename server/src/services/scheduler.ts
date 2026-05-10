@@ -2,6 +2,7 @@ import cron, { ScheduledTask } from "node-cron";
 import { db } from "../db.js";
 import { config } from "../config.js";
 import { gate } from "./gate.js";
+import { getHistoryRetentionDays } from "./settings.js";
 import { todayISO } from "../util/date.js";
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -94,7 +95,7 @@ function startPrune() {
   cron.schedule(
     "0 2 * * *",
     () => {
-      const days = config.historyRetentionDays;
+      const days = getHistoryRetentionDays();
       const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10);

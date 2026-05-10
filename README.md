@@ -61,7 +61,7 @@ All config is environment variables. See `.env.example` for the full list.
 | `UNIFI_PW` | Password for that account |
 | `UNIFI_SITE` | UniFi site identifier. Default `default` |
 | `TZ` | Timezone for cron schedules. Default `America/New_York` |
-| `HISTORY_RETENTION_DAYS` | How long to keep completion history + gate log. Default `90` |
+| `HISTORY_RETENTION_DAYS` | First-boot seed only for the in-app retention setting. Default `90`. After first boot, change it under Settings → history retention; the env var is ignored. |
 
 The compose file uses `${VAR:?msg}` substitution, so the stack will refuse to start if any required secret is unset.
 
