@@ -79,6 +79,8 @@ Whichever you pick:
 3. Add each kid device as a Pi-hole client by MAC and put it in `Kids_Unblocked` to start.
 4. Generate an application password under Settings → API and put it in `PIHOLE_PW`.
 
+> **If you skip step 2, the Pi-hole layer is a no-op.** The chore-app will happily move clients between two empty groups; UniFi alone will be doing all the actual blocking. That's still a working gate, but you've lost the defense-in-depth — if a kid finds a way around the L2 block (ethernet, hotspot off-host, etc.) and you assumed Pi-hole was a fallback, it isn't.
+
 The app resolves group IDs by name at runtime, so you can rename the groups via the env vars if you'd rather.
 
 ### UniFi setup
