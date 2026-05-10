@@ -4,7 +4,15 @@
       "name": "Kid One",
       "slug": "kid-one",
       "avatar": null,
-      "bedtime": "20:00",
+      "bedtimes": [
+        { "weekday": 0, "time": "20:00" },
+        { "weekday": 1, "time": "20:00" },
+        { "weekday": 2, "time": "20:00" },
+        { "weekday": 3, "time": "20:00" },
+        { "weekday": 4, "time": "20:00" },
+        { "weekday": 5, "time": "21:30" },
+        { "weekday": 6, "time": "21:30" }
+      ],
       "macs": [
         { "mac": "02:00:00:00:00:01", "label": "primary" }
       ]

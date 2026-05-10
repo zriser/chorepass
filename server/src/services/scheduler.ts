@@ -8,38 +8,45 @@ import { todayISO } from "../util/date.js";
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DEFAULT_RESET_TIME = "06:00";
 
-const kidJobs = new Map<number, ScheduledTask>();
+const kidJobs = new Map<number, ScheduledTask[]>();
 let dailyResetJob: ScheduledTask | null = null;
 
-function scheduleKidBedtime(kidId: number, bedtime: string): boolean {
+function scheduleKidBedtime(kidId: number, weekday: number, bedtime: string): ScheduledTask | null {
   const m = bedtime.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) {
-    console.error(`[scheduler] kid ${kidId} has bad bedtime "${bedtime}", skipping`);
-    return false;
+    console.error(
+      `[scheduler] kid ${kidId} weekday ${weekday}: bad bedtime "${bedtime}", skipping`,
+    );
+    return null;
   }
-  const expr = `${Number(m[2])} ${Number(m[1])} * * *`;
-  const job = cron.schedule(
+  const expr = `${Number(m[2])} ${Number(m[1])} * * ${weekday}`;
+  return cron.schedule(
     expr,
     async () => {
-      console.log(`[scheduler] bedtime block kid=${kidId} (${bedtime})`);
+      console.log(`[scheduler] bedtime block kid=${kidId} weekday=${weekday} (${bedtime})`);
       const r = await gate.block(kidId, "schedule");
       if (!r.ok) console.error(`[scheduler] bedtime block failed kid=${kidId}: ${r.error}`);
     },
     { timezone: config.tz },
   );
-  kidJobs.set(kidId, job);
-  return true;
 }
 
 export function reloadKidJobs(): number {
-  for (const job of kidJobs.values()) job.stop();
+  for (const jobs of kidJobs.values()) for (const job of jobs) job.stop();
   kidJobs.clear();
-  const kids = db
-    .prepare("SELECT id, bedtime FROM kids")
-    .all() as { id: number; bedtime: string }[];
+  const rows = db
+    .prepare("SELECT kid_id, weekday, time FROM kid_bedtimes ORDER BY kid_id, weekday")
+    .all() as { kid_id: number; weekday: number; time: string }[];
   let registered = 0;
-  for (const k of kids) if (scheduleKidBedtime(k.id, k.bedtime)) registered++;
-  console.log(`[scheduler] kid bedtime jobs: ${registered}/${kids.length}`);
+  for (const r of rows) {
+    const job = scheduleKidBedtime(r.kid_id, r.weekday, r.time);
+    if (!job) continue;
+    const list = kidJobs.get(r.kid_id) ?? [];
+    list.push(job);
+    kidJobs.set(r.kid_id, list);
+    registered++;
+  }
+  console.log(`[scheduler] kid bedtime jobs: ${registered}/${rows.length}`);
   return registered;
 }
 

@@ -1,23 +1,74 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type Kid } from "../../api.js";
+import { api, type Bedtime, type Kid } from "../../api.js";
 import { Avatar, colorForName } from "../../components/Avatar.js";
 
 type Draft = {
   id?: number;
   name: string;
   slug: string;
-  bedtime: string;
+  // Index 0..6 (0=Sun..6=Sat), each holds the time string or "" for "no bedtime that day".
+  bedtimes: string[];
   avatar: string;
   macs: { mac: string; label: string }[];
 };
 
+// Display order in the bedtime grid: Mon..Sun. Stored values stay 0=Sun..6=Sat
+// so they line up with util/date.ts weekdayIndex on the server.
+const WEEKDAY_DISPLAY: { weekday: number; short: string; long: string }[] = [
+  { weekday: 1, short: "Mon", long: "Monday" },
+  { weekday: 2, short: "Tue", long: "Tuesday" },
+  { weekday: 3, short: "Wed", long: "Wednesday" },
+  { weekday: 4, short: "Thu", long: "Thursday" },
+  { weekday: 5, short: "Fri", long: "Friday" },
+  { weekday: 6, short: "Sat", long: "Saturday" },
+  { weekday: 0, short: "Sun", long: "Sunday" },
+];
+
 const EMPTY: Draft = {
   name: "",
   slug: "",
-  bedtime: "20:00",
+  bedtimes: ["20:00", "20:00", "20:00", "20:00", "20:00", "20:00", "20:00"],
   avatar: "",
   macs: [{ mac: "", label: "" }],
 };
+
+function bedtimesToDraft(bedtimes: Bedtime[]): string[] {
+  const out = ["", "", "", "", "", "", ""];
+  for (const b of bedtimes) {
+    if (b.weekday >= 0 && b.weekday <= 6) out[b.weekday] = b.time;
+  }
+  return out;
+}
+
+function draftToBedtimes(draft: string[]): Bedtime[] {
+  const out: Bedtime[] = [];
+  for (let i = 0; i < 7; i++) {
+    if (draft[i]) out.push({ weekday: i, time: draft[i] });
+  }
+  return out;
+}
+
+function summarizeBedtimes(bedtimes: Bedtime[]): string {
+  if (!bedtimes.length) return "no scheduled bedtimes";
+  const byTime = new Map<string, number[]>();
+  for (const b of bedtimes) {
+    const list = byTime.get(b.time) ?? [];
+    list.push(b.weekday);
+    byTime.set(b.time, list);
+  }
+  // If every weekday shares the same time, show the simple form.
+  if (byTime.size === 1 && bedtimes.length === 7) {
+    return `bedtime ${bedtimes[0].time} every day`;
+  }
+  const labelFor = (weekday: number) =>
+    WEEKDAY_DISPLAY.find((d) => d.weekday === weekday)?.short ?? `?${weekday}`;
+  const parts: string[] = [];
+  for (const { weekday } of WEEKDAY_DISPLAY) {
+    const time = bedtimes.find((b) => b.weekday === weekday)?.time;
+    if (time) parts.push(`${labelFor(weekday)} ${time}`);
+  }
+  return parts.join(" · ");
+}
 
 export default function KidsTab() {
   const [kids, setKids] = useState<Kid[] | null>(null);
@@ -36,13 +87,14 @@ export default function KidsTab() {
     refresh();
   }, [refresh]);
 
-  const startNew = () => setDraft({ ...EMPTY, macs: [{ mac: "", label: "" }] });
+  const startNew = () =>
+    setDraft({ ...EMPTY, bedtimes: [...EMPTY.bedtimes], macs: [{ mac: "", label: "" }] });
   const startEdit = (k: Kid) =>
     setDraft({
       id: k.id,
       name: k.name,
       slug: k.slug,
-      bedtime: k.bedtime,
+      bedtimes: bedtimesToDraft(k.bedtimes),
       avatar: k.avatar ?? "",
       macs: k.macs.length
         ? k.macs.map((m) => ({ mac: m.mac, label: m.label ?? "" }))
@@ -54,7 +106,7 @@ export default function KidsTab() {
     const payload = {
       name: draft.name.trim(),
       slug: draft.slug.trim() || draft.name.trim().toLowerCase().replace(/\s+/g, "-"),
-      bedtime: draft.bedtime,
+      bedtimes: draftToBedtimes(draft.bedtimes),
       avatar: draft.avatar.trim() || null,
       macs: draft.macs
         .map((m) => ({ mac: m.mac.trim(), label: m.label.trim() || undefined }))
@@ -133,7 +185,7 @@ export default function KidsTab() {
               <div className="flex-1 min-w-[140px]">
                 <div className="font-display font-bold text-xl">{k.name}</div>
                 <div className="font-body text-sm text-ink-soft">
-                  <code className="font-mono">{k.slug}</code> · bedtime {k.bedtime}
+                  <code className="font-mono">{k.slug}</code> · {summarizeBedtimes(k.bedtimes)}
                 </div>
                 <div className="font-body text-xs text-ink-soft/70 mt-1 break-all">
                   {k.macs.length} MAC{k.macs.length === 1 ? "" : "s"}:{" "}
@@ -259,14 +311,6 @@ function KidForm({
               placeholder="alex"
             />
           </Field>
-          <Field label="bedtime">
-            <input
-              type="time"
-              value={draft.bedtime}
-              onChange={(e) => update("bedtime", e.target.value)}
-              className="input"
-            />
-          </Field>
           <Field label="emoji avatar (optional, used if no photo)">
             <input
               value={isImageAvatar ? "" : draft.avatar}
@@ -277,6 +321,74 @@ function KidForm({
               disabled={isImageAvatar}
             />
           </Field>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-baseline justify-between mb-2 gap-3 flex-wrap">
+          <label className="block font-display font-semibold text-ink-soft">
+            bedtimes
+          </label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const first = draft.bedtimes.find((t) => t) ?? "20:00";
+                update("bedtimes", new Array(7).fill(first));
+              }}
+              className="pill bg-paper text-ink-soft text-xs"
+              title="Set every day to the first non-empty bedtime"
+            >
+              same every day
+            </button>
+            <button
+              type="button"
+              onClick={() => update("bedtimes", new Array(7).fill(""))}
+              className="pill bg-paper text-ink-soft text-xs"
+              title="Clear all bedtimes (no scheduled blocks)"
+            >
+              clear all
+            </button>
+          </div>
+        </div>
+        <p className="font-body text-xs text-ink-soft mb-3">
+          empty = no scheduled block that day. parents can still force-block from the Today tab.
+        </p>
+        <div className="space-y-2">
+          {WEEKDAY_DISPLAY.map(({ weekday, short, long }) => (
+            <div key={weekday} className="flex items-center gap-3">
+              <span
+                className="font-display font-semibold text-ink-soft w-12 text-sm"
+                title={long}
+              >
+                {short}
+              </span>
+              <input
+                type="time"
+                value={draft.bedtimes[weekday]}
+                onChange={(e) => {
+                  const next = [...draft.bedtimes];
+                  next[weekday] = e.target.value;
+                  update("bedtimes", next);
+                }}
+                className="input"
+              />
+              {draft.bedtimes[weekday] && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = [...draft.bedtimes];
+                    next[weekday] = "";
+                    update("bedtimes", next);
+                  }}
+                  className="pill bg-paper text-ink-soft px-3 text-xs"
+                  title="No scheduled bedtime this day"
+                >
+                  clear
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 

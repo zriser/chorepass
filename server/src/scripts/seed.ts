@@ -8,11 +8,16 @@ import { config } from "../config.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 type SeedMac = { mac: string; label?: string | null };
+type SeedBedtime = { weekday: number; time: string };
 type SeedKid = {
   name: string;
   slug: string;
   avatar?: string | null;
-  bedtime: string;
+  // Per-weekday bedtimes (weekday 0=Sun..6=Sat). For backwards-compat with
+  // older seed.json files that used a single `bedtime` field, the loader
+  // expands a top-level `bedtime` to all 7 weekdays.
+  bedtimes?: SeedBedtime[];
+  bedtime?: string;
   macs: SeedMac[];
 };
 type SeedChore = {
@@ -37,10 +42,13 @@ const data: SeedFile = JSON.parse(fs.readFileSync(seedPath, "utf8"));
 runMigrations();
 
 const insertKid = db.prepare(
-  "INSERT INTO kids (name, slug, avatar, bedtime) VALUES (?, ?, ?, ?)",
+  "INSERT INTO kids (name, slug, avatar) VALUES (?, ?, ?)",
 );
 const insertMac = db.prepare(
   "INSERT INTO kid_macs (kid_id, mac, label) VALUES (?, ?, ?)",
+);
+const insertBedtime = db.prepare(
+  "INSERT INTO kid_bedtimes (kid_id, weekday, time) VALUES (?, ?, ?)",
 );
 const findKidBySlug = db.prepare("SELECT id FROM kids WHERE slug = ?");
 const insertChore = db.prepare(
@@ -61,12 +69,21 @@ const tx = db.transaction(() => {
       console.log(`- kid ${kid.slug} already exists (id=${existing.id}), skipping`);
       continue;
     }
-    const info = insertKid.run(kid.name, kid.slug, kid.avatar ?? null, kid.bedtime);
+    const info = insertKid.run(kid.name, kid.slug, kid.avatar ?? null);
     const kidId = Number(info.lastInsertRowid);
     for (const m of kid.macs) {
       insertMac.run(kidId, m.mac.toLowerCase(), m.label ?? null);
     }
-    console.log(`+ kid ${kid.slug} (id=${kidId}) with ${kid.macs.length} mac(s)`);
+    const bedtimes: SeedBedtime[] =
+      kid.bedtimes && kid.bedtimes.length
+        ? kid.bedtimes
+        : kid.bedtime
+          ? [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, time: kid.bedtime! }))
+          : [];
+    for (const b of bedtimes) insertBedtime.run(kidId, b.weekday, b.time);
+    console.log(
+      `+ kid ${kid.slug} (id=${kidId}) with ${kid.macs.length} mac(s), ${bedtimes.length} bedtime(s)`,
+    );
   }
 
   for (const chore of data.chores) {
