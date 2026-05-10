@@ -248,7 +248,7 @@ function KidForm({
               value={draft.name}
               onChange={(e) => update("name", e.target.value)}
               className="input"
-              placeholder="Zoe"
+              placeholder="Alex"
             />
           </Field>
           <Field label="slug (url)">
@@ -256,7 +256,7 @@ function KidForm({
               value={draft.slug}
               onChange={(e) => update("slug", e.target.value)}
               className="input"
-              placeholder="zoe"
+              placeholder="alex"
             />
           </Field>
           <Field label="bedtime">

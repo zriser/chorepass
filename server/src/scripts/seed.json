@@ -1,22 +1,22 @@
 {
   "kids": [
     {
-      "name": "Zoe",
-      "slug": "zoe",
+      "name": "Kid One",
+      "slug": "kid-one",
       "avatar": null,
       "bedtime": "20:00",
       "macs": [
-        { "mac": "06:4d:28:af:f7:da", "label": "primary" }
+        { "mac": "02:00:00:00:00:01", "label": "primary" }
       ]
     },
     {
-      "name": "Caleb",
-      "slug": "caleb",
+      "name": "Kid Two",
+      "slug": "kid-two",
       "avatar": null,
       "bedtime": "22:00",
       "macs": [
-        { "mac": "50:ee:32:98:18:fd", "label": "device 1" },
-        { "mac": "e2:1c:c6:e5:5d:ce", "label": "device 2" }
+        { "mac": "02:00:00:00:00:02", "label": "phone" },
+        { "mac": "02:00:00:00:00:03", "label": "tablet" }
       ]
     }
   ],

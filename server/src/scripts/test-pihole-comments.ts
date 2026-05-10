@@ -1,5 +1,8 @@
 // One-off: add descriptive comments to Pi-hole client entries so the UI is self-explanatory.
 // Uses the same auth + insecure agent as services/pihole.ts.
+//
+// Usage: tsx test-pihole-comments.ts <mac>=<comment> [<mac>=<comment> ...]
+//   e.g. tsx test-pihole-comments.ts 02:00:00:00:00:01="Kid One iPad" 02:00:00:00:00:02="Kid Two phone"
 import { Agent, fetch as undiciFetch } from "undici";
 import { config } from "../config.js";
 
@@ -39,15 +42,23 @@ async function setClient(sid: string, mac: string, comment: string, groupId: num
   if (!res.ok) console.log("  body:", await res.text().catch(() => ""));
 }
 
+const args = process.argv.slice(2);
+if (args.length === 0) {
+  console.error('usage: tsx test-pihole-comments.ts <mac>=<comment> [<mac>=<comment> ...]');
+  process.exit(1);
+}
+
+const clients: Array<[string, string]> = args.map((arg) => {
+  const eq = arg.indexOf("=");
+  if (eq === -1) {
+    console.error(`bad arg "${arg}" — expected <mac>=<comment>`);
+    process.exit(1);
+  }
+  return [arg.slice(0, eq), arg.slice(eq + 1)];
+});
+
 const sid = await authSid();
 const unblockedId = await resolveGroupId(sid, config.pihole.unblockedGroup);
-
-const clients: Array<[string, string]> = [
-  ["06:4d:28:af:f7:da", "Zoe — iPad (primary)"],
-  ["50:ee:32:98:18:fd", "Caleb — device 1"],
-  ["e2:1c:c6:e5:5d:ce", "Caleb — device 2"],
-  ["c2:6b:06:24:8b:59", "Zach phone (test)"],
-];
 
 for (const [mac, comment] of clients) {
   await setClient(sid, mac, comment, unblockedId);

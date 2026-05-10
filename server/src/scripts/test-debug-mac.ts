@@ -1,10 +1,16 @@
-// Diagnostic: is c2:6b:06:24:8b:59 known to UniFi + actually blocked?
-// Also list currently-connected stations so we can find the phone's real MAC.
+// Diagnostic: is <mac> known to UniFi + actually blocked?
+// Also lists currently-connected stations so you can find a device's real MAC.
+// Usage: tsx test-debug-mac.ts <mac>
 import { Agent, fetch as undiciFetch } from "undici";
 import { unifi } from "../services/unifi.js";
 import { config } from "../config.js";
 
-const MAC = "c2:6b:06:24:8b:59";
+const MAC = process.argv[2];
+
+if (!MAC) {
+  console.error("usage: tsx test-debug-mac.ts <mac>");
+  process.exit(1);
+}
 
 const u = await unifi.getUser(MAC);
 console.log(`getUser(${MAC}):`, u);
