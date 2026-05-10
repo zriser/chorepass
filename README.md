@@ -15,6 +15,8 @@ Both are toggled together. If either fails the gate operation reports `ok: false
 
 State of the gate is logged to a `gate_log` table; the parent UI's "Today" tab shows the latest action (block/unblock) per kid plus whether they've earned unblock by the chore rule.
 
+**What this won't catch:** cellular data, mobile hotspots, and any device on a Wi-Fi network you don't run. The app gates the LAN; it doesn't reach beyond it.
+
 ## Requirements
 
 - Linux host with Docker + Docker Compose
@@ -22,6 +24,7 @@ State of the gate is logged to a `gate_log` table; the parent UI's "Today" tab s
 - UniFi OS controller (Dream Machine, Cloud Gateway, UNVR, etc.) reachable over HTTPS
 - A reverse proxy fronting the app on your LAN (Caddy, Nginx Proxy Manager, etc.) — the app does not terminate TLS
 - A device-to-kid MAC mapping you actually know and trust
+- **Stable MACs on the kid devices.** iOS "Private Wi-Fi Address" and Android MAC randomization will silently break the gate by handing each device a fresh MAC per network. Disable randomization for your home SSID on every kid device, or the app will appear "stuck blocked" the moment a device rerolls.
 
 ## Quick start
 
@@ -39,7 +42,7 @@ First boot:
 1. The `PARENT_PIN_DEFAULT` from your `.env` is hashed into the settings table — change it from the in-app **Settings** tab afterward.
 2. Add kids in the **Kids** tab. For each kid: name, slug (used in URLs), bedtime, and one or more device MACs.
 3. Add chores in the **Chores** tab and assign them to kids per weekday.
-4. Hand each kid the URL `https://<your-host>/<slug>` — that's their view, no auth required.
+4. Hand each kid the URL `https://<your-host>/kid/<slug>` — that's their view. There's no auth on the kid page; treat the slug like a shared secret.
 
 ## Configuration
 
@@ -64,16 +67,23 @@ The compose file uses `${VAR:?msg}` substitution, so the stack will refuse to st
 
 ### Pi-hole setup
 
-1. Create two groups: `Kids_Unblocked` (your default group) and `Kids_Blocked`.
-2. Attach a deny-all blocklist (e.g. a single regex `.*`) to **only** the `Kids_Blocked` group.
-3. Add each kid device as a Pi-hole client by MAC and put them in `Kids_Unblocked` to start.
-4. Generate an application password under Settings → API → Application password — that's `PIHOLE_PW`.
+The chore-app's only Pi-hole responsibility is moving each kid's MAC between two groups — `PIHOLE_UNBLOCKED_GROUP` and `PIHOLE_BLOCKED_GROUP` (defaults: `Kids_Unblocked`, `Kids_Blocked`). It does not configure adlists, regex rules, or the meaning of those groups for you. **You decide what makes membership in the blocked group actually block traffic.**
+
+Two common recipes:
+- **Deny-list scoped to the blocked group** — attach an aggressive adlist (or a `.*` regex deny) to only `Kids_Blocked`. Members of that group resolve nothing; everyone else is unaffected.
+- **Default-deny + allow-list scoped to the unblocked group** — keep your normal adlists on Default, then put allow rules / a permissive group on `Kids_Unblocked` that exempts members. Toggle exemption by group membership.
+
+Whichever you pick:
+1. Create both groups in Pi-hole (Group management).
+2. Attach whatever lists/rules implement your block semantics.
+3. Add each kid device as a Pi-hole client by MAC and put it in `Kids_Unblocked` to start.
+4. Generate an application password under Settings → API and put it in `PIHOLE_PW`.
 
 The app resolves group IDs by name at runtime, so you can rename the groups via the env vars if you'd rather.
 
 ### UniFi setup
 
-1. Create a local admin account (UniFi OS → Admins → Add → "Restrict to local access only"). Give it network admin permissions on the site you'll target. Recommended username: `chore-bot`.
+1. In UniFi OS, create a local admin account (one that authenticates against the controller, not your Ubiquiti SSO) with network admin permissions on the site you'll target. The exact menu wording depends on firmware — look for "local-only" or "restricted" admin options. Recommended username: `chore-bot`.
 2. Make sure the controller is reachable from the chore-app container over HTTPS. The app uses cookie-based auth and tolerates self-signed certs.
 
 ## Daily flow
@@ -89,18 +99,19 @@ The app resolves group IDs by name at runtime, so you can rename the groups via 
 - The parent area is protected by a numeric PIN. It is hashed in the settings table and the cookie is signed with `SESSION_SECRET`. Pick a long random secret.
 - The app talks to Pi-hole and UniFi over HTTPS but does not validate the controller's certificate (homelab self-signed reality). Keep that traffic on your LAN.
 - Don't reuse network-admin credentials for `UNIFI_USER` — make a dedicated account so you can rotate it.
+- **Back up `./data/chores.db`.** That single file holds your kid records, MAC mappings, completion history, gate log, and the parent PIN hash. It's the only stateful thing the app produces.
 
 ## Development
 
 ```bash
-# server
-cd server && npm install && npm run dev
+# install both workspaces from the repo root
+npm run install:all
 
-# web (separate terminal)
-cd web && npm install && npm run dev
+# run server + web concurrently
+npm run dev
 ```
 
-The web dev server proxies `/api` to the server on `:3000` (see `web/vite.config.ts`).
+Or run them in separate terminals: `npm --prefix server run dev` and `npm --prefix web run dev`. The web dev server proxies `/api` to the server on `:3000` (see `web/vite.config.ts`).
 
 `server/src/scripts/test-pihole.ts` and `test-unifi.ts` exercise the integrations against your real controllers — use a non-critical test MAC.
 
