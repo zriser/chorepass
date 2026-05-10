@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type GateLogRow } from "../../api.js";
+import { formatLocalDateTime } from "../../format.js";
 
 export default function GateLogTab() {
   const [rows, setRows] = useState<GateLogRow[] | null>(null);
@@ -60,7 +61,7 @@ export default function GateLogTab() {
                     i % 2 === 0 ? "" : "bg-paper-deep/40",
                   ].join(" ")}
                 >
-                  <td className="px-3 py-2 font-mono text-xs text-ink-soft">{r.created_at}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-ink-soft">{formatLocalDateTime(r.created_at)}</td>
                   <td className="px-3 py-2 font-display font-semibold">{r.kid_name ?? "—"}</td>
                   <td className="px-3 py-2">
                     <span

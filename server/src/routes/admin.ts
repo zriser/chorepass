@@ -48,7 +48,8 @@ router.get("/gate-status", (_req, res) => {
     slug: string;
   }[];
   const latest = db.prepare(
-    `SELECT action, created_at FROM gate_log
+    `SELECT action, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+       FROM gate_log
       WHERE kid_id = ?
       ORDER BY id DESC LIMIT 1`,
   );
@@ -97,7 +98,8 @@ router.get("/gate-log", (req, res) => {
   const rows = db
     .prepare(
       `SELECT gl.id, gl.kid_id, k.name AS kid_name, gl.action, gl.source,
-              gl.pihole_ok, gl.unifi_ok, gl.error, gl.created_at
+              gl.pihole_ok, gl.unifi_ok, gl.error,
+              strftime('%Y-%m-%dT%H:%M:%SZ', gl.created_at) AS created_at
          FROM gate_log gl
          LEFT JOIN kids k ON k.id = gl.kid_id
          ${where}
