@@ -57,6 +57,7 @@ router.get("/gate-status", (_req, res) => {
       lastAction: last?.action ?? null,
       lastActionAt: last?.created_at ?? null,
       shouldBeUnlocked: rule.unlocked,
+      currentlyUnlocked: last?.action === "unblock",
       chores: { done: rule.completed, total: rule.total },
     };
   });

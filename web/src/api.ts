@@ -77,6 +77,7 @@ export type GateStatus = {
   lastAction: "block" | "unblock" | null;
   lastActionAt: string | null;
   shouldBeUnlocked: boolean;
+  currentlyUnlocked: boolean;
   chores: { done: number; total: number };
 };
 export type GateLogRow = {

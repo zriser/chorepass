@@ -69,21 +69,28 @@ export default function TodayTab() {
           <li key={r.id} className="sticker bg-paper p-4 flex flex-wrap items-center gap-4">
             <div className="flex-1 min-w-[180px]">
               <div className="font-display font-bold text-xl">{r.name}</div>
-              <div className="font-body text-sm text-ink-soft mt-0.5">
-                <span className="font-bold">
-                  {r.chores.done}/{r.chores.total}
-                </span>{" "}
-                done ·{" "}
+              <div className="font-body text-sm text-ink-soft mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>
+                  <span className="font-bold">
+                    {r.chores.done}/{r.chores.total}
+                  </span>{" "}
+                  done
+                </span>
                 <span
                   className={[
                     "font-display font-bold px-2 py-0.5 rounded-full border-2 border-ink text-xs",
-                    r.shouldBeUnlocked
+                    r.currentlyUnlocked
                       ? "bg-mint text-ink"
                       : "bg-tangerine text-paper",
                   ].join(" ")}
                 >
-                  {r.shouldBeUnlocked ? "unlocked" : "blocked"}
+                  {r.currentlyUnlocked ? "unblocked" : "blocked"}
                 </span>
+                {r.shouldBeUnlocked && (
+                  <span className="font-display font-bold px-2 py-0.5 rounded-full border-2 border-ink text-xs bg-sunshine text-ink">
+                    earned
+                  </span>
+                )}
               </div>
               {r.lastAction && (
                 <div className="font-mono text-xs text-ink-soft/60 mt-1">
