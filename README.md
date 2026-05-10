@@ -40,7 +40,7 @@ App listens on `:3000`. Point your reverse proxy at it (LAN-only access list str
 
 First boot:
 1. The `PARENT_PIN_DEFAULT` from your `.env` is hashed into the settings table — change it from the in-app **Settings** tab afterward.
-2. Add kids in the **Kids** tab. For each kid: name, slug (used in URLs), bedtime, and one or more device MACs.
+2. Add kids in the **Kids** tab. For each kid: name, slug (used in URLs), per-weekday bedtimes (each day can have its own time, or be left empty to skip a scheduled block), and one or more device MACs.
 3. Add chores in the **Chores** tab and assign them to kids per weekday.
 4. Hand each kid the URL `https://<your-host>/kid/<slug>` — that's their view. There's no auth on the kid page; treat the slug like a shared secret.
 
@@ -92,7 +92,7 @@ The app resolves group IDs by name at runtime, so you can rename the groups via 
 
 - **06:00** — morning reset clears yesterday's completions and re-blocks every kid.
 - During the day — when a kid checks off all their assigned chores for the current weekday, the app calls `gate.unblock` and their devices go free.
-- **At each kid's bedtime** — a per-kid cron job calls `gate.block`.
+- **At each kid's bedtime for the current weekday** — the per-(kid, weekday) cron job calls `gate.block`. Days left empty in the bedtime grid simply have no scheduled block.
 - Parents can force block/unblock from the **Today** tab at any time; that overrides the rule until the next scheduled event.
 
 ## Security notes

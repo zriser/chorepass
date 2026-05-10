@@ -34,14 +34,15 @@ export const api = {
 };
 
 export type Mac = { id: number; mac: string; label: string | null };
+export type Bedtime = { weekday: number; time: string };
 export type Kid = {
   id: number;
   name: string;
   slug: string;
   avatar: string | null;
-  bedtime: string;
   created_at: string;
   macs: Mac[];
+  bedtimes: Bedtime[];
 };
 export type Assignment = {
   id: number;

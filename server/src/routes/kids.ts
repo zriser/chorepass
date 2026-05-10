@@ -26,11 +26,40 @@ type KidRow = {
   name: string;
   slug: string;
   avatar: string | null;
-  bedtime: string;
   created_at: string;
 };
 
 type MacRow = { id: number; kid_id: number; mac: string; label: string | null };
+type BedtimeRow = { kid_id: number; weekday: number; time: string };
+type BedtimeInput = { weekday: number; time: string };
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function parseBedtimes(raw: unknown): BedtimeInput[] {
+  if (!Array.isArray(raw)) {
+    throw new Error("bedtimes must be an array of {weekday, time}");
+  }
+  const seen = new Set<number>();
+  const out: BedtimeInput[] = [];
+  for (const entry of raw) {
+    if (entry == null) continue;
+    const weekday = Number((entry as any).weekday);
+    const time = String((entry as any).time ?? "");
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6) {
+      throw new Error(`bedtimes.weekday must be an integer 0..6 (got ${(entry as any).weekday})`);
+    }
+    if (time === "") continue;
+    if (!TIME_RE.test(time)) {
+      throw new Error(`bedtimes.time must be HH:MM (got "${time}")`);
+    }
+    if (seen.has(weekday)) {
+      throw new Error(`bedtimes has duplicate entry for weekday ${weekday}`);
+    }
+    seen.add(weekday);
+    out.push({ weekday, time });
+  }
+  return out;
+}
 
 function loadKid(id: number) {
   const kid = db.prepare("SELECT * FROM kids WHERE id = ?").get(id) as KidRow | undefined;
@@ -38,7 +67,10 @@ function loadKid(id: number) {
   const macs = db
     .prepare("SELECT id, mac, label FROM kid_macs WHERE kid_id = ? ORDER BY id")
     .all(id) as Omit<MacRow, "kid_id">[];
-  return { ...kid, macs };
+  const bedtimes = db
+    .prepare("SELECT weekday, time FROM kid_bedtimes WHERE kid_id = ? ORDER BY weekday")
+    .all(id) as Omit<BedtimeRow, "kid_id">[];
+  return { ...kid, macs, bedtimes };
 }
 
 function loadKidBySlug(slug: string) {
@@ -50,26 +82,48 @@ function loadKidBySlug(slug: string) {
 router.get("/", (_req, res) => {
   const kids = db.prepare("SELECT * FROM kids ORDER BY name").all() as KidRow[];
   const macs = db.prepare("SELECT id, kid_id, mac, label FROM kid_macs").all() as MacRow[];
-  const byKid = new Map<number, Omit<MacRow, "kid_id">[]>();
+  const bedtimes = db
+    .prepare("SELECT kid_id, weekday, time FROM kid_bedtimes ORDER BY weekday")
+    .all() as BedtimeRow[];
+  const macsByKid = new Map<number, Omit<MacRow, "kid_id">[]>();
   for (const m of macs) {
-    const list = byKid.get(m.kid_id) ?? [];
+    const list = macsByKid.get(m.kid_id) ?? [];
     list.push({ id: m.id, mac: m.mac, label: m.label });
-    byKid.set(m.kid_id, list);
+    macsByKid.set(m.kid_id, list);
   }
-  res.json(kids.map((k) => ({ ...k, macs: byKid.get(k.id) ?? [] })));
+  const bedtimesByKid = new Map<number, Omit<BedtimeRow, "kid_id">[]>();
+  for (const b of bedtimes) {
+    const list = bedtimesByKid.get(b.kid_id) ?? [];
+    list.push({ weekday: b.weekday, time: b.time });
+    bedtimesByKid.set(b.kid_id, list);
+  }
+  res.json(
+    kids.map((k) => ({
+      ...k,
+      macs: macsByKid.get(k.id) ?? [],
+      bedtimes: bedtimesByKid.get(k.id) ?? [],
+    })),
+  );
 });
 
 router.post("/", requireParent, (req, res) => {
-  const { name, slug, bedtime, avatar, macs } = req.body ?? {};
-  if (!name || !slug || !bedtime) {
-    return res.status(400).json({ error: "name, slug, bedtime required" });
+  const { name, slug, bedtimes, avatar, macs } = req.body ?? {};
+  if (!name || !slug) {
+    return res.status(400).json({ error: "name, slug required" });
   }
   const macList: { mac: string; label?: string }[] = Array.isArray(macs) ? macs : [];
 
+  let parsedBedtimes: BedtimeInput[];
+  try {
+    parsedBedtimes = parseBedtimes(bedtimes ?? []);
+  } catch (e: any) {
+    return res.status(400).json({ error: String(e?.message ?? e) });
+  }
+
   const tx = db.transaction(() => {
     const info = db
-      .prepare("INSERT INTO kids (name, slug, avatar, bedtime) VALUES (?, ?, ?, ?)")
-      .run(name, slug, avatar ?? null, bedtime);
+      .prepare("INSERT INTO kids (name, slug, avatar) VALUES (?, ?, ?)")
+      .run(name, slug, avatar ?? null);
     const kidId = Number(info.lastInsertRowid);
     const insertMac = db.prepare(
       "INSERT INTO kid_macs (kid_id, mac, label) VALUES (?, ?, ?)",
@@ -77,6 +131,10 @@ router.post("/", requireParent, (req, res) => {
     for (const m of macList) {
       insertMac.run(kidId, m.mac.toLowerCase(), m.label ?? null);
     }
+    const insertBedtime = db.prepare(
+      "INSERT INTO kid_bedtimes (kid_id, weekday, time) VALUES (?, ?, ?)",
+    );
+    for (const b of parsedBedtimes) insertBedtime.run(kidId, b.weekday, b.time);
     return kidId;
   });
 
@@ -94,15 +152,23 @@ router.put("/:id", requireParent, (req, res) => {
   const existing = loadKid(id);
   if (!existing) return res.status(404).json({ error: "not found" });
 
-  const { name, slug, bedtime, avatar, macs } = req.body ?? {};
+  const { name, slug, bedtimes, avatar, macs } = req.body ?? {};
+
+  let parsedBedtimes: BedtimeInput[] | null = null;
+  if (bedtimes !== undefined) {
+    try {
+      parsedBedtimes = parseBedtimes(bedtimes);
+    } catch (e: any) {
+      return res.status(400).json({ error: String(e?.message ?? e) });
+    }
+  }
 
   const tx = db.transaction(() => {
     db.prepare(
-      "UPDATE kids SET name = ?, slug = ?, bedtime = ?, avatar = ? WHERE id = ?",
+      "UPDATE kids SET name = ?, slug = ?, avatar = ? WHERE id = ?",
     ).run(
       name ?? existing.name,
       slug ?? existing.slug,
-      bedtime ?? existing.bedtime,
       avatar ?? existing.avatar,
       id,
     );
@@ -112,6 +178,13 @@ router.put("/:id", requireParent, (req, res) => {
         "INSERT INTO kid_macs (kid_id, mac, label) VALUES (?, ?, ?)",
       );
       for (const m of macs) insertMac.run(id, m.mac.toLowerCase(), m.label ?? null);
+    }
+    if (parsedBedtimes !== null) {
+      db.prepare("DELETE FROM kid_bedtimes WHERE kid_id = ?").run(id);
+      const insertBedtime = db.prepare(
+        "INSERT INTO kid_bedtimes (kid_id, weekday, time) VALUES (?, ?, ?)",
+      );
+      for (const b of parsedBedtimes) insertBedtime.run(id, b.weekday, b.time);
     }
   });
 
