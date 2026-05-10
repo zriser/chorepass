@@ -7,6 +7,59 @@ export default function SettingsTab() {
       <h2 className="font-display font-bold text-2xl">settings</h2>
       <MorningResetSection />
       <ChangePinSection />
+      <DeployConfigSection />
+    </div>
+  );
+}
+
+type DeployConfig = {
+  tz: string;
+  pihole: { unblockedGroup: string; blockedGroup: string };
+  unifi: { host: string; site: string };
+};
+
+function DeployConfigSection() {
+  const [cfg, setCfg] = useState<DeployConfig | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setCfg(await api.get<DeployConfig>("/api/admin/deploy-config"));
+      } catch (e: any) {
+        setError(String(e.message ?? e));
+      }
+    })();
+  }, []);
+
+  return (
+    <div className="sticker-lg bg-paper-deep p-6 max-w-md">
+      <h3 className="font-display font-bold text-xl mb-1">deploy config</h3>
+      <p className="font-body text-sm text-ink-soft mb-5">
+        read-only. these are set as env vars at deploy time — change them by
+        editing <code className="font-mono text-xs">/opt/stacks/chorepass/.env</code> and restarting the container.
+      </p>
+
+      {error && (
+        <div className="sticker bg-tangerine text-paper px-4 py-2 font-display animate-shake-x">
+          {error}
+        </div>
+      )}
+      {!cfg && !error && <div className="font-display text-ink-soft/60">loading…</div>}
+      {cfg && (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 font-mono text-sm">
+          <dt className="text-ink-soft">timezone</dt>
+          <dd>{cfg.tz}</dd>
+          <dt className="text-ink-soft">pi-hole unblocked</dt>
+          <dd>{cfg.pihole.unblockedGroup}</dd>
+          <dt className="text-ink-soft">pi-hole blocked</dt>
+          <dd>{cfg.pihole.blockedGroup}</dd>
+          <dt className="text-ink-soft">unifi host</dt>
+          <dd>{cfg.unifi.host || <span className="text-ink-soft/60">—</span>}</dd>
+          <dt className="text-ink-soft">unifi site</dt>
+          <dd>{cfg.unifi.site}</dd>
+        </dl>
+      )}
     </div>
   );
 }

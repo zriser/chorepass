@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "../db.js";
+import { config } from "../config.js";
 import { requireParent } from "../middleware/requireParent.js";
 import { shouldBeUnlocked } from "../services/unlockRule.js";
 import { gate } from "../services/gate.js";
@@ -66,6 +67,20 @@ router.get("/gate-status", (_req, res) => {
     };
   });
   res.json(status);
+});
+
+router.get("/deploy-config", (_req, res) => {
+  res.json({
+    tz: config.tz,
+    pihole: {
+      unblockedGroup: config.pihole.unblockedGroup,
+      blockedGroup: config.pihole.blockedGroup,
+    },
+    unifi: {
+      host: config.unifi.host,
+      site: config.unifi.site,
+    },
+  });
 });
 
 router.get("/morning-reset-time", (_req, res) => {
