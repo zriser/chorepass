@@ -96,4 +96,11 @@ export const gate = {
     for (const k of kids) results.push(await applyToKid(k.id, "block", source));
     return results;
   },
+
+  async unblockAll(source: GateSource): Promise<GateResult[]> {
+    const kids = db.prepare("SELECT id FROM kids").all() as { id: number }[];
+    const results: GateResult[] = [];
+    for (const k of kids) results.push(await applyToKid(k.id, "unblock", source));
+    return results;
+  },
 };

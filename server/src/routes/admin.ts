@@ -88,24 +88,45 @@ router.get("/deploy-config", (_req, res) => {
   });
 });
 
-router.get("/morning-reset-time", (_req, res) => {
-  const row = db
-    .prepare("SELECT value FROM settings WHERE key = 'morning_reset_time'")
-    .get() as { value: string } | undefined;
-  res.json({ time: row?.value ?? "06:00" });
+router.get("/daily-schedule", (_req, res) => {
+  const rows = db
+    .prepare(
+      `SELECT key, value FROM settings
+        WHERE key IN ('morning_reset_time', 'chore_enforcement_time')`,
+    )
+    .all() as { key: string; value: string }[];
+  const map = new Map(rows.map((r) => [r.key, r.value]));
+  res.json({
+    resetTime: map.get("morning_reset_time") ?? "06:00",
+    enforcementTime: map.get("chore_enforcement_time") ?? "06:00",
+  });
 });
 
-router.put("/morning-reset-time", (req, res) => {
-  const time = String(req.body?.time ?? "");
-  if (!TIME_RE.test(time)) {
-    return res.status(400).json({ error: "time must be HH:MM (24-hour)" });
+router.put("/daily-schedule", (req, res) => {
+  const resetTime = String(req.body?.resetTime ?? "");
+  const enforcementTime = String(req.body?.enforcementTime ?? "");
+  if (!TIME_RE.test(resetTime)) {
+    return res.status(400).json({ error: "resetTime must be HH:MM (24-hour)" });
   }
-  db.prepare(
-    `INSERT INTO settings (key, value) VALUES ('morning_reset_time', ?)
+  if (!TIME_RE.test(enforcementTime)) {
+    return res.status(400).json({ error: "enforcementTime must be HH:MM (24-hour)" });
+  }
+  if (enforcementTime < resetTime) {
+    return res
+      .status(400)
+      .json({ error: "enforcementTime must be at or after resetTime" });
+  }
+  const upsert = db.prepare(
+    `INSERT INTO settings (key, value) VALUES (?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-  ).run(time);
-  const applied = scheduler.reloadDailyReset();
-  res.json({ ok: true, time: applied });
+  );
+  const tx = db.transaction(() => {
+    upsert.run("morning_reset_time", resetTime);
+    upsert.run("chore_enforcement_time", enforcementTime);
+  });
+  tx();
+  const applied = scheduler.reloadDailySchedule();
+  res.json({ ok: true, ...applied });
 });
 
 router.get("/history-retention-days", (_req, res) => {
