@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Bedtime, type Kid } from "../../api.js";
-import { Avatar, colorForName } from "../../components/Avatar.js";
+import { Avatar, PALETTE, colorForName } from "../../components/Avatar.js";
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 type Draft = {
   id?: number;
@@ -9,6 +11,8 @@ type Draft = {
   // Index 0..6 (0=Sun..6=Sat), each holds the time string or "" for "no bedtime that day".
   bedtimes: string[];
   avatar: string;
+  // Stored as #RRGGBB lowercase, or "" to use the name-hashed default.
+  color: string;
   macs: { mac: string; label: string }[];
 };
 
@@ -29,6 +33,7 @@ const EMPTY: Draft = {
   slug: "",
   bedtimes: ["20:00", "20:00", "20:00", "20:00", "20:00", "20:00", "20:00"],
   avatar: "",
+  color: "",
   macs: [{ mac: "", label: "" }],
 };
 
@@ -96,6 +101,7 @@ export default function KidsTab() {
       slug: k.slug,
       bedtimes: bedtimesToDraft(k.bedtimes),
       avatar: k.avatar ?? "",
+      color: k.color ?? "",
       macs: k.macs.length
         ? k.macs.map((m) => ({ mac: m.mac, label: m.label ?? "" }))
         : [{ mac: "", label: "" }],
@@ -103,11 +109,17 @@ export default function KidsTab() {
 
   const save = async () => {
     if (!draft) return;
+    const trimmedColor = draft.color.trim().toLowerCase();
+    if (trimmedColor && !HEX_RE.test(trimmedColor)) {
+      setError(`avatar color must be #RRGGBB (got "${draft.color}")`);
+      return;
+    }
     const payload = {
       name: draft.name.trim(),
       slug: draft.slug.trim() || draft.name.trim().toLowerCase().replace(/\s+/g, "-"),
       bedtimes: draftToBedtimes(draft.bedtimes),
       avatar: draft.avatar.trim() || null,
+      color: trimmedColor || null,
       macs: draft.macs
         .map((m) => ({ mac: m.mac.trim(), label: m.label.trim() || undefined }))
         .filter((m) => m.mac),
@@ -181,7 +193,12 @@ export default function KidsTab() {
         {kids?.map((k) => (
           <li key={k.id} className="sticker bg-paper p-4">
             <div className="flex items-center gap-4 flex-wrap">
-              <Avatar name={k.name} avatar={k.avatar} size={64} />
+              <Avatar
+                name={k.name}
+                avatar={k.avatar}
+                size={64}
+                color={k.color ?? undefined}
+              />
               <div className="flex-1 min-w-[140px]">
                 <div className="font-display font-bold text-xl">{k.name}</div>
                 <div className="font-body text-sm text-ink-soft">
@@ -242,6 +259,8 @@ function KidForm({
   const fileRef = useRef<HTMLInputElement>(null);
   const isImageAvatar = !!draft.avatar && (draft.avatar.startsWith("/") || draft.avatar.startsWith("http"));
   const previewName = draft.name || "new kid";
+  const effectiveColor =
+    draft.color && HEX_RE.test(draft.color) ? draft.color : colorForName(previewName);
 
   return (
     <div className="sticker-lg bg-paper-deep p-6 space-y-5 animate-pop-in">
@@ -255,7 +274,7 @@ function KidForm({
             name={previewName}
             avatar={draft.avatar}
             size={120}
-            color={colorForName(previewName)}
+            color={effectiveColor}
           />
           <div className="flex flex-col gap-1.5 w-32">
             {draft.id ? (
@@ -320,6 +339,48 @@ function KidForm({
               placeholder="🐱"
               disabled={isImageAvatar}
             />
+          </Field>
+
+          <Field label="avatar color (empty = auto from name)">
+            <div className="flex flex-wrap items-center gap-2">
+              {PALETTE.map((c) => {
+                const selected = draft.color.toLowerCase() === c.toLowerCase();
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => update("color", c)}
+                    className={[
+                      "w-9 h-9 rounded-full border-3 transition-transform",
+                      selected
+                        ? "border-ink scale-110 shadow-sticker"
+                        : "border-ink/30 hover:scale-105",
+                    ].join(" ")}
+                    style={{ backgroundColor: c }}
+                    aria-label={`pick ${c}`}
+                    title={c}
+                  />
+                );
+              })}
+              <input
+                type="text"
+                value={draft.color}
+                onChange={(e) => update("color", e.target.value)}
+                placeholder="#a1b2c3"
+                className="input-mono w-28 text-sm"
+                maxLength={7}
+              />
+              {draft.color && (
+                <button
+                  type="button"
+                  onClick={() => update("color", "")}
+                  className="pill bg-paper text-ink-soft text-xs"
+                  title="Use the name-hashed default"
+                >
+                  clear
+                </button>
+              )}
+            </div>
           </Field>
         </div>
       </div>
