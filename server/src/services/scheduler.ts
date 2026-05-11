@@ -7,9 +7,10 @@ import { todayISO } from "../util/date.js";
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DEFAULT_RESET_TIME = "06:00";
+const DEFAULT_ENFORCEMENT_TIME = "06:00";
 
 const kidJobs = new Map<number, ScheduledTask[]>();
-let dailyResetJob: ScheduledTask | null = null;
+let dailyJobs: ScheduledTask[] = [];
 
 function scheduleKidBedtime(kidId: number, weekday: number, bedtime: string): ScheduledTask | null {
   const m = bedtime.match(/^(\d{1,2}):(\d{2})$/);
@@ -50,52 +51,95 @@ export function reloadKidJobs(): number {
   return registered;
 }
 
-function getMorningResetTime(): string {
+function readTimeSetting(key: string, fallback: string): string {
   const row = db
-    .prepare("SELECT value FROM settings WHERE key = 'morning_reset_time'")
-    .get() as { value: string } | undefined;
-  const value = row?.value ?? DEFAULT_RESET_TIME;
+    .prepare("SELECT value FROM settings WHERE key = ?")
+    .get(key) as { value: string } | undefined;
+  const value = row?.value ?? fallback;
   if (!TIME_RE.test(value)) {
-    console.warn(
-      `[scheduler] invalid morning_reset_time "${value}" in settings, falling back to ${DEFAULT_RESET_TIME}`,
-    );
-    return DEFAULT_RESET_TIME;
+    console.warn(`[scheduler] invalid ${key} "${value}" in settings, falling back to ${fallback}`);
+    return fallback;
   }
   return value;
 }
 
-function scheduleDailyReset(time: string) {
+function cronExprFor(time: string): string {
   const [hh, mm] = time.split(":").map(Number);
-  const expr = `${mm} ${hh} * * *`;
-  dailyResetJob = cron.schedule(
-    expr,
+  return `${mm} ${hh} * * *`;
+}
+
+async function runMorningReset(label: string) {
+  const date = todayISO();
+  const removed = db
+    .prepare("DELETE FROM completions WHERE completed_date = ?")
+    .run(date).changes;
+  console.log(`[scheduler] ${label} ${date} — cleared ${removed} completions`);
+}
+
+async function runUnblockAll() {
+  const results = await gate.unblockAll("schedule");
+  const failed = results.filter((r) => !r.ok);
+  if (failed.length) {
+    console.error(
+      `[scheduler] morning unblock had ${failed.length}/${results.length} failures`,
+    );
+  }
+}
+
+async function runBlockAll(label: string) {
+  const results = await gate.blockAll("schedule");
+  const failed = results.filter((r) => !r.ok);
+  if (failed.length) {
+    console.error(
+      `[scheduler] ${label} had ${failed.length}/${results.length} failures`,
+    );
+  }
+}
+
+function scheduleDailyJobs(resetTime: string, enforcementTime: string) {
+  if (resetTime === enforcementTime) {
+    // No buffer window — single combined job: clear + block. Matches pre-#11 behavior.
+    const job = cron.schedule(
+      cronExprFor(resetTime),
+      async () => {
+        await runMorningReset(`morning reset (${resetTime})`);
+        await runBlockAll(`morning block (${resetTime})`);
+      },
+      { timezone: config.tz },
+    );
+    dailyJobs.push(job);
+    console.log(`[scheduler] daily reset+block scheduled for ${resetTime} (combined)`);
+    return;
+  }
+  // Buffer window — reset clears + unblocks; enforcement blocks until chores done.
+  const resetJob = cron.schedule(
+    cronExprFor(resetTime),
     async () => {
-      const date = todayISO();
-      const removed = db
-        .prepare("DELETE FROM completions WHERE completed_date = ?")
-        .run(date).changes;
-      console.log(`[scheduler] morning reset ${date} (${time}) — cleared ${removed} completions`);
-      const results = await gate.blockAll("schedule");
-      const failed = results.filter((r) => !r.ok);
-      if (failed.length) {
-        console.error(
-          `[scheduler] morning block had ${failed.length}/${results.length} failures`,
-        );
-      }
+      await runMorningReset(`morning reset (${resetTime})`);
+      await runUnblockAll();
     },
     { timezone: config.tz },
   );
+  const enforceJob = cron.schedule(
+    cronExprFor(enforcementTime),
+    async () => {
+      await runBlockAll(`chore enforcement (${enforcementTime})`);
+    },
+    { timezone: config.tz },
+  );
+  dailyJobs.push(resetJob, enforceJob);
+  console.log(
+    `[scheduler] daily reset scheduled for ${resetTime}; enforcement for ${enforcementTime}`,
+  );
 }
 
-export function reloadDailyReset(): string {
-  if (dailyResetJob) {
-    dailyResetJob.stop();
-    dailyResetJob = null;
-  }
-  const time = getMorningResetTime();
-  scheduleDailyReset(time);
-  console.log(`[scheduler] daily reset scheduled for ${time}`);
-  return time;
+export function reloadDailySchedule(): { resetTime: string; enforcementTime: string } {
+  for (const job of dailyJobs) job.stop();
+  dailyJobs = [];
+  const resetTime = readTimeSetting("morning_reset_time", DEFAULT_RESET_TIME);
+  const enforcementTime = readTimeSetting("chore_enforcement_time", DEFAULT_ENFORCEMENT_TIME);
+  scheduleDailyJobs(resetTime, enforcementTime);
+  return { resetTime, enforcementTime };
 }
 
 function startPrune() {
@@ -121,10 +165,10 @@ function startPrune() {
 }
 
 export function start() {
-  reloadDailyReset();
+  reloadDailySchedule();
   startPrune();
   reloadKidJobs();
   console.log(`[scheduler] started (tz=${config.tz})`);
 }
 
-export const scheduler = { start, reloadKidJobs, reloadDailyReset };
+export const scheduler = { start, reloadKidJobs, reloadDailySchedule };

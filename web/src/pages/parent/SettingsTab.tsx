@@ -5,7 +5,7 @@ export default function SettingsTab() {
   return (
     <div className="space-y-6">
       <h2 className="font-display font-bold text-2xl">settings</h2>
-      <MorningResetSection />
+      <DailyScheduleSection />
       <HistoryRetentionSection />
       <ChangePinSection />
       <DeployConfigSection />
@@ -175,9 +175,12 @@ function DeployConfigSection() {
   );
 }
 
-function MorningResetSection() {
-  const [time, setTime] = useState<string>("");
-  const [original, setOriginal] = useState<string>("");
+function DailyScheduleSection() {
+  const [resetTime, setResetTime] = useState<string>("");
+  const [enforcementTime, setEnforcementTime] = useState<string>("");
+  const [original, setOriginal] = useState<{ resetTime: string; enforcementTime: string } | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -186,9 +189,12 @@ function MorningResetSection() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await api.get<{ time: string }>("/api/admin/morning-reset-time");
-        setTime(r.time);
-        setOriginal(r.time);
+        const r = await api.get<{ resetTime: string; enforcementTime: string }>(
+          "/api/admin/daily-schedule",
+        );
+        setResetTime(r.resetTime);
+        setEnforcementTime(r.enforcementTime);
+        setOriginal(r);
       } catch (e: any) {
         setError(String(e.message ?? e));
       } finally {
@@ -200,18 +206,24 @@ function MorningResetSection() {
   const submit = async () => {
     setError(null);
     setDone(false);
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
-      setError("time must be HH:MM (24-hour)");
+    const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (!hhmm.test(resetTime) || !hhmm.test(enforcementTime)) {
+      setError("times must be HH:MM (24-hour)");
+      return;
+    }
+    if (enforcementTime < resetTime) {
+      setError("enforcement time must be at or after reset time");
       return;
     }
     setBusy(true);
     try {
-      const r = await api.put<{ ok: true; time: string }>(
-        "/api/admin/morning-reset-time",
-        { time },
+      const r = await api.put<{ ok: true; resetTime: string; enforcementTime: string }>(
+        "/api/admin/daily-schedule",
+        { resetTime, enforcementTime },
       );
-      setOriginal(r.time);
-      setTime(r.time);
+      setOriginal({ resetTime: r.resetTime, enforcementTime: r.enforcementTime });
+      setResetTime(r.resetTime);
+      setEnforcementTime(r.enforcementTime);
       setDone(true);
     } catch (e: any) {
       setError(e instanceof ApiError ? e.message : String(e.message ?? e));
@@ -220,34 +232,60 @@ function MorningResetSection() {
     }
   };
 
-  const dirty = time !== original;
+  const dirty =
+    original !== null &&
+    (resetTime !== original.resetTime || enforcementTime !== original.enforcementTime);
+  const combined = resetTime === enforcementTime;
 
   return (
     <div className="sticker-lg bg-paper-deep p-6 max-w-md">
-      <h3 className="font-display font-bold text-xl mb-1">morning reset time</h3>
+      <h3 className="font-display font-bold text-xl mb-1">daily schedule</h3>
       <p className="font-body text-sm text-ink-soft mb-5">
-        every day at this time, completions reset and all kids get blocked until
-        chores are done.
+        at <b>reset</b>, yesterday's completions clear and bedtime ends — devices unblock.
+        at <b>chore enforcement</b>, devices block again until today's chores are done.
+        set them equal to skip the morning buffer (clear + block in one step).
       </p>
 
       {loading ? (
         <div className="font-display text-ink-soft/60">loading…</div>
       ) : (
         <>
-          <label className="block">
-            <span className="block font-display font-semibold text-ink-soft text-sm mb-1">
-              reset at
-            </span>
-            <input
-              type="time"
-              value={time}
-              onChange={(e) => {
-                setTime(e.target.value);
-                setDone(false);
-              }}
-              className="input font-mono text-lg"
-            />
-          </label>
+          <div className="grid grid-cols-2 gap-4">
+            <label className="block">
+              <span className="block font-display font-semibold text-ink-soft text-sm mb-1">
+                reset at
+              </span>
+              <input
+                type="time"
+                value={resetTime}
+                onChange={(e) => {
+                  setResetTime(e.target.value);
+                  setDone(false);
+                }}
+                className="input font-mono text-lg"
+              />
+            </label>
+            <label className="block">
+              <span className="block font-display font-semibold text-ink-soft text-sm mb-1">
+                enforce at
+              </span>
+              <input
+                type="time"
+                value={enforcementTime}
+                onChange={(e) => {
+                  setEnforcementTime(e.target.value);
+                  setDone(false);
+                }}
+                className="input font-mono text-lg"
+              />
+            </label>
+          </div>
+
+          <div className="mt-3 font-body text-xs text-ink-soft/80">
+            {combined
+              ? "no morning buffer — devices stay blocked from bedtime through chores."
+              : `morning buffer: devices are unblocked from ${resetTime} until ${enforcementTime}.`}
+          </div>
 
           {error && (
             <div className="mt-4 sticker bg-tangerine text-paper px-4 py-2 font-display animate-shake-x">
