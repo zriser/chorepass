@@ -6,7 +6,7 @@ import { db } from "../db.js";
 import { config } from "../config.js";
 import { requireParent } from "../middleware/requireParent.js";
 import { scheduler } from "../services/scheduler.js";
-import { todayISO, weekdayIndex } from "../util/date.js";
+import { startOfWeekISO, todayISO, weekdayIndex } from "../util/date.js";
 
 const router = Router();
 
@@ -274,9 +274,29 @@ router.get("/:slug/today", (req, res) => {
     .all(kid.id, date) as { chore_id: number; completed_at: string; completed_by: string }[];
   const doneBy = new Map(doneRows.map((r) => [r.chore_id, r]));
 
+  const weekStart = startOfWeekISO(date);
+  const sumWeek = db
+    .prepare(
+      `SELECT COALESCE(SUM(c.points), 0) AS points
+         FROM completions cmp
+         JOIN chores c ON c.id = cmp.chore_id
+        WHERE cmp.kid_id = ? AND cmp.completed_date >= ?`,
+    )
+    .get(kid.id, weekStart) as { points: number };
+  const sumAll = db
+    .prepare(
+      `SELECT COALESCE(SUM(c.points), 0) AS points
+         FROM completions cmp
+         JOIN chores c ON c.id = cmp.chore_id
+        WHERE cmp.kid_id = ?`,
+    )
+    .get(kid.id) as { points: number };
+
   res.json({
     kid: { id: kid.id, name: kid.name, slug: kid.slug, avatar: kid.avatar },
     date,
+    pointsWeek: sumWeek.points,
+    pointsAllTime: sumAll.points,
     chores: chores.map((c) => {
       const d = doneBy.get(c.id);
       return {

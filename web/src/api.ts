@@ -69,6 +69,8 @@ export type TodayChore = {
 export type Today = {
   kid: { id: number; name: string; slug: string; avatar: string | null };
   date: string;
+  pointsWeek: number;
+  pointsAllTime: number;
   chores: TodayChore[];
 };
 export type GateStatus = {
@@ -80,6 +82,7 @@ export type GateStatus = {
   shouldBeUnlocked: boolean;
   currentlyUnlocked: boolean;
   chores: { done: number; total: number };
+  pointsToday: number;
 };
 export type GateLogRow = {
   id: number;

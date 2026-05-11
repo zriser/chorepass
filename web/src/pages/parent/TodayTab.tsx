@@ -77,6 +77,9 @@ export default function TodayTab() {
                   </span>{" "}
                   done
                 </span>
+                <span className="font-display font-bold px-2 py-0.5 rounded-full border-2 border-ink text-xs bg-paper-deep text-ink">
+                  ★ {r.pointsToday} today
+                </span>
                 <span
                   className={[
                     "font-display font-bold px-2 py-0.5 rounded-full border-2 border-ink text-xs",
