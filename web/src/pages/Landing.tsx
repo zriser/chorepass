@@ -66,7 +66,7 @@ export default function Landing() {
 }
 
 function KidTile({ kid, index }: { kid: Kid; index: number }) {
-  const color = colorForName(kid.name);
+  const color = kid.color ?? colorForName(kid.name);
   const tilt = (index % 2 === 0 ? -1 : 1) * (1.5 + (index % 3) * 0.7);
 
   return (

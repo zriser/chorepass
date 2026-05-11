@@ -41,7 +41,10 @@ export default function KidView() {
   const done = data?.chores.filter((c) => c.completed).length ?? 0;
   const total = data?.chores.length ?? 0;
   const allDone = total > 0 && done === total;
-  const kidColor = useMemo(() => (data ? colorForName(data.kid.name) : "#2BB7C4"), [data]);
+  const kidColor = useMemo(
+    () => (data ? data.kid.color ?? colorForName(data.kid.name) : "#2BB7C4"),
+    [data],
+  );
 
   useEffect(() => {
     if (allDone && !stampedOnce.current) {

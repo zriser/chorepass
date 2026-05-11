@@ -1,7 +1,7 @@
 // Sticker-style avatar. Renders an uploaded image (URL starting with "/") OR a single emoji
 // OR falls back to a colored badge with the first initial. Each kid has a deterministic
 // signature color derived from their name.
-const PALETTE = ["#E94886", "#2BB7C4", "#FFC93C", "#FF7A45", "#5BD9A4", "#9B6FE0"];
+export const PALETTE = ["#E94886", "#2BB7C4", "#FFC93C", "#FF7A45", "#5BD9A4", "#9B6FE0"];
 
 export function colorForName(name: string): string {
   const hash = [...name].reduce((a, c) => a + c.charCodeAt(0), 0);

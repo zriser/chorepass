@@ -26,6 +26,7 @@ type KidRow = {
   name: string;
   slug: string;
   avatar: string | null;
+  color: string | null;
   created_at: string;
 };
 
@@ -34,6 +35,16 @@ type BedtimeRow = { kid_id: number; weekday: number; time: string };
 type BedtimeInput = { weekday: number; time: string };
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+
+function normalizeColor(raw: unknown): string | null {
+  if (raw === null || raw === undefined || raw === "") return null;
+  const s = String(raw).trim();
+  if (!HEX_COLOR_RE.test(s)) {
+    throw new Error(`color must be #RRGGBB hex (got "${s}")`);
+  }
+  return s.toLowerCase();
+}
 
 function parseBedtimes(raw: unknown): BedtimeInput[] {
   if (!Array.isArray(raw)) {
@@ -107,23 +118,25 @@ router.get("/", (_req, res) => {
 });
 
 router.post("/", requireParent, (req, res) => {
-  const { name, slug, bedtimes, avatar, macs } = req.body ?? {};
+  const { name, slug, bedtimes, avatar, color, macs } = req.body ?? {};
   if (!name || !slug) {
     return res.status(400).json({ error: "name, slug required" });
   }
   const macList: { mac: string; label?: string }[] = Array.isArray(macs) ? macs : [];
 
   let parsedBedtimes: BedtimeInput[];
+  let parsedColor: string | null;
   try {
     parsedBedtimes = parseBedtimes(bedtimes ?? []);
+    parsedColor = normalizeColor(color);
   } catch (e: any) {
     return res.status(400).json({ error: String(e?.message ?? e) });
   }
 
   const tx = db.transaction(() => {
     const info = db
-      .prepare("INSERT INTO kids (name, slug, avatar) VALUES (?, ?, ?)")
-      .run(name, slug, avatar ?? null);
+      .prepare("INSERT INTO kids (name, slug, avatar, color) VALUES (?, ?, ?, ?)")
+      .run(name, slug, avatar ?? null, parsedColor);
     const kidId = Number(info.lastInsertRowid);
     const insertMac = db.prepare(
       "INSERT INTO kid_macs (kid_id, mac, label) VALUES (?, ?, ?)",
@@ -152,24 +165,25 @@ router.put("/:id", requireParent, (req, res) => {
   const existing = loadKid(id);
   if (!existing) return res.status(404).json({ error: "not found" });
 
-  const { name, slug, bedtimes, avatar, macs } = req.body ?? {};
+  const { name, slug, bedtimes, avatar, color, macs } = req.body ?? {};
 
   let parsedBedtimes: BedtimeInput[] | null = null;
-  if (bedtimes !== undefined) {
-    try {
-      parsedBedtimes = parseBedtimes(bedtimes);
-    } catch (e: any) {
-      return res.status(400).json({ error: String(e?.message ?? e) });
-    }
+  let parsedColor: string | null | undefined;
+  try {
+    if (bedtimes !== undefined) parsedBedtimes = parseBedtimes(bedtimes);
+    if (color !== undefined) parsedColor = normalizeColor(color);
+  } catch (e: any) {
+    return res.status(400).json({ error: String(e?.message ?? e) });
   }
 
   const tx = db.transaction(() => {
     db.prepare(
-      "UPDATE kids SET name = ?, slug = ?, avatar = ? WHERE id = ?",
+      "UPDATE kids SET name = ?, slug = ?, avatar = ?, color = ? WHERE id = ?",
     ).run(
       name ?? existing.name,
       slug ?? existing.slug,
       avatar ?? existing.avatar,
+      parsedColor === undefined ? existing.color : parsedColor,
       id,
     );
     if (Array.isArray(macs)) {
@@ -293,7 +307,13 @@ router.get("/:slug/today", (req, res) => {
     .get(kid.id) as { points: number };
 
   res.json({
-    kid: { id: kid.id, name: kid.name, slug: kid.slug, avatar: kid.avatar },
+    kid: {
+      id: kid.id,
+      name: kid.name,
+      slug: kid.slug,
+      avatar: kid.avatar,
+      color: kid.color,
+    },
     date,
     pointsWeek: sumWeek.points,
     pointsAllTime: sumAll.points,

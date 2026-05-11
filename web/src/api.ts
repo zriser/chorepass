@@ -40,6 +40,7 @@ export type Kid = {
   name: string;
   slug: string;
   avatar: string | null;
+  color: string | null;
   created_at: string;
   macs: Mac[];
   bedtimes: Bedtime[];
@@ -67,7 +68,13 @@ export type TodayChore = {
   completed_by: string | null;
 };
 export type Today = {
-  kid: { id: number; name: string; slug: string; avatar: string | null };
+  kid: {
+    id: number;
+    name: string;
+    slug: string;
+    avatar: string | null;
+    color: string | null;
+  };
   date: string;
   pointsWeek: number;
   pointsAllTime: number;
