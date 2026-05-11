@@ -33,3 +33,12 @@ export function weekdayArrayFromMask(mask: number): number[] {
   for (let d = 0; d <= 6; d++) if (mask & (1 << d)) out.push(d);
   return out;
 }
+
+// Sunday is day 0, matching weekdayIndex(). Returns the ISO date of the
+// most recent Sunday on or before dateISO.
+export function startOfWeekISO(dateISO: string = todayISO()): string {
+  const wd = weekdayIndex(dateISO);
+  const d = new Date(`${dateISO}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - wd);
+  return d.toISOString().slice(0, 10);
+}

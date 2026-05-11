@@ -59,6 +59,17 @@ router.get("/gate-status", (_req, res) => {
       WHERE kid_id = ?
       ORDER BY id DESC LIMIT 1`,
   );
+  const date = todayISO();
+  const pointsRows = db
+    .prepare(
+      `SELECT cmp.kid_id AS kid_id, COALESCE(SUM(c.points), 0) AS points
+         FROM completions cmp
+         JOIN chores c ON c.id = cmp.chore_id
+        WHERE cmp.completed_date = ?
+        GROUP BY cmp.kid_id`,
+    )
+    .all(date) as { kid_id: number; points: number }[];
+  const pointsByKid = new Map(pointsRows.map((r) => [r.kid_id, r.points]));
   const status = kids.map((k) => {
     const last = latest.get(k.id) as { action: string; created_at: string } | undefined;
     const rule = shouldBeUnlocked(k.id);
@@ -69,6 +80,7 @@ router.get("/gate-status", (_req, res) => {
       shouldBeUnlocked: rule.unlocked,
       currentlyUnlocked: last?.action === "unblock",
       chores: { done: rule.completed, total: rule.total },
+      pointsToday: pointsByKid.get(k.id) ?? 0,
     };
   });
   res.json(status);

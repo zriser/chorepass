@@ -123,6 +123,10 @@ export default function KidView() {
 
       <section className="sticker p-5 mb-7">
         <ProgressRing done={done} total={total} color={kidColor} />
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <PointsBadge label="this week" value={data.pointsWeek} color={kidColor} />
+          <PointsBadge label="all time" value={data.pointsAllTime} color={kidColor} />
+        </div>
       </section>
 
       {total === 0 ? (
@@ -343,4 +347,28 @@ function Celebration({
 function humanDate(iso: string): string {
   const d = new Date(iso + "T00:00:00");
   return d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+}
+
+function PointsBadge({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: number;
+  color: string;
+}) {
+  return (
+    <div className="sticker bg-paper-deep px-4 py-3 flex flex-col items-center text-center">
+      <span
+        className="font-display font-bold text-4xl leading-none"
+        style={{ color, textShadow: "1px 2px 0 rgba(31,22,17,0.25)" }}
+      >
+        {value}
+      </span>
+      <span className="font-display uppercase tracking-[0.15em] text-xs text-ink-soft mt-1">
+        {label}
+      </span>
+    </div>
+  );
 }
