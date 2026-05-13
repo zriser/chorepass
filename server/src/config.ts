@@ -37,10 +37,14 @@ export const config = {
     user: process.env.UNIFI_USER ?? "",
     password: process.env.UNIFI_PW ?? "",
     site: process.env.UNIFI_SITE ?? "default",
-    // traffic_rule: toggle a per-kid Traffic Rule (kid stays on Wi-Fi, only internet drops)
-    // mac_block: legacy per-MAC `cmd/stamgr block-sta` (disconnects from Wi-Fi entirely)
+    // traffic_rule: toggle a per-kid Traffic Rule (kid stays on Wi-Fi, only internet drops).
+    //   Requires a modern UniFi Cloud Gateway (UDM/UXG/UCG). USG (legacy) accepts the
+    //   API call but the gateway silently does not enforce — use `none` instead.
+    // mac_block: legacy per-MAC `cmd/stamgr block-sta` (disconnects from Wi-Fi entirely).
+    // none: skip UniFi entirely; Pi-hole is the only enforcement layer.
     enforcementMode: (process.env.UNIFI_ENFORCEMENT_MODE ?? "traffic_rule") as
       | "traffic_rule"
-      | "mac_block",
+      | "mac_block"
+      | "none",
   },
 };

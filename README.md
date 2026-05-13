@@ -9,9 +9,12 @@ It is opinionated and homelab-shaped: it expects **Pi-hole v6** and a **UniFi OS
 Two enforcement layers, toggled together:
 
 - **Pi-hole** — a `Kids_Blocked` group with a deny-all blocklist. Each kid's MACs move between `Kids_Unblocked` and `Kids_Blocked`. Members get DNS-level NXDOMAIN for everything. This is the heavy hammer.
-- **UniFi** — one of two strategies, picked by `UNIFI_ENFORCEMENT_MODE`:
-  - `traffic_rule` *(default)* — toggle a per-kid Traffic Rule (`chorepass:<slug>`) that blocks internet only. The kid stays on Wi-Fi and can still reach the chore-app's UI to check off chores. This is what you want for the daytime chore gate.
-  - `mac_block` — the controller's per-MAC `cmd/stamgr block-sta` flag. Disconnects the device from Wi-Fi entirely. Useful for a hard bedtime "device off" semantic.
+- **UniFi** — one of three strategies, picked by `UNIFI_ENFORCEMENT_MODE`:
+  - `traffic_rule` *(default)* — toggle a per-kid Traffic Rule (`chorepass:<slug>`) that blocks internet only. The kid stays on Wi-Fi and can still reach the chore-app's UI to check off chores. This is what you want for the daytime chore gate. **Requires a modern UniFi Cloud Gateway (UDM/UXG/UCG). See the USG note below.**
+  - `mac_block` — the controller's per-MAC `cmd/stamgr block-sta` flag. Disconnects the device from Wi-Fi entirely. Useful for a hard bedtime "device off" semantic. Works on all UniFi gateways including legacy USG.
+  - `none` — skip the UniFi layer entirely; rely on Pi-hole alone. Use this if you're on a legacy USG and don't want the disconnect side effect of `mac_block`. Accepts the tradeoff that a kid using DNS-over-HTTPS or iCloud Private Relay can bypass the gate (Pi-hole sees no queries to deny).
+
+> **Legacy USG note.** The original UniFi Security Gateway line (UGW3 / USG-Pro-4 / USG-XG-8) **does not support v2 Traffic Rules.** The controller accepts the API call and stores the rule; the gateway silently never enforces it. If you're on USG hardware, set `UNIFI_ENFORCEMENT_MODE=none` (and accept the DoH-bypass risk) or `mac_block` (and accept the disconnect side effect). `traffic_rule` mode will appear to work in logs but produce no actual gateway enforcement. Upgrading to a Cloud Gateway (UDM/UXG/UCG) unlocks the `traffic_rule` mode without any code or config change.
 
 If either layer fails the gate operation reports `ok: false` but the other layer is still applied, so partial failures degrade closed.
 
@@ -62,7 +65,7 @@ All config is environment variables. See `.env.example` for the full list.
 | `UNIFI_USER` | Local-admin username (recommend a dedicated `chore-bot` account) |
 | `UNIFI_PW` | Password for that account |
 | `UNIFI_SITE` | UniFi site identifier. Default `default` |
-| `UNIFI_ENFORCEMENT_MODE` | `traffic_rule` *(default)* or `mac_block`. See **How blocking works** above. |
+| `UNIFI_ENFORCEMENT_MODE` | `traffic_rule` *(default)*, `mac_block`, or `none`. Set to `none` on legacy USG hardware. See **How blocking works** above. |
 | `TZ` | Timezone for cron schedules. Default `America/New_York` |
 | `HISTORY_RETENTION_DAYS` | First-boot seed only for the in-app retention setting. Default `90`. After first boot, change it under Settings → history retention; the env var is ignored. |
 

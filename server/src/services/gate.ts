@@ -56,9 +56,13 @@ async function applyUnifi(
   kid: KidRow,
   macs: string[],
   action: GateAction,
-): Promise<{ ok: boolean; errors: string[] }> {
+): Promise<{ ok: boolean | null; errors: string[] }> {
   const errors: string[] = [];
-  if (config.unifi.enforcementMode === "traffic_rule") {
+  const mode = config.unifi.enforcementMode;
+  if (mode === "none") {
+    return { ok: null, errors: [] };
+  }
+  if (mode === "traffic_rule") {
     const r =
       action === "block"
         ? await unifi.enableTrafficRuleForSlug(kid.slug)
@@ -109,8 +113,11 @@ async function applyToKid(
 
   logGate(kidId, action, source, piholeOk, unifiOk, error);
 
+  // For overall ok, treat unifiOk=null (mode=none) as not-failing.
+  const overallOk = piholeOk && unifiOk !== false;
+
   return {
-    ok: piholeOk && unifiOk,
+    ok: overallOk,
     kidId,
     action,
     macs: macs.length,
