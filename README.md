@@ -6,12 +6,14 @@ It is opinionated and homelab-shaped: it expects **Pi-hole v6** and a **UniFi OS
 
 ## How blocking works
 
-Two enforcement layers, applied to every MAC associated with a kid:
+Two enforcement layers, toggled together:
 
-- **Pi-hole** — a `Kids_Blocked` group with a deny-all blocklist. Members get DNS-level NXDOMAIN for everything. This is the heavy hammer.
-- **UniFi** — the controller's per-MAC block flag. This catches devices that have hard-coded DNS or DoH and would otherwise bypass Pi-hole.
+- **Pi-hole** — a `Kids_Blocked` group with a deny-all blocklist. Each kid's MACs move between `Kids_Unblocked` and `Kids_Blocked`. Members get DNS-level NXDOMAIN for everything. This is the heavy hammer.
+- **UniFi** — one of two strategies, picked by `UNIFI_ENFORCEMENT_MODE`:
+  - `traffic_rule` *(default)* — toggle a per-kid Traffic Rule (`chorepass:<slug>`) that blocks internet only. The kid stays on Wi-Fi and can still reach the chore-app's UI to check off chores. This is what you want for the daytime chore gate.
+  - `mac_block` — the controller's per-MAC `cmd/stamgr block-sta` flag. Disconnects the device from Wi-Fi entirely. Useful for a hard bedtime "device off" semantic.
 
-Both are toggled together. If either fails the gate operation reports `ok: false` but the other layer is still applied, so partial failures degrade closed.
+If either layer fails the gate operation reports `ok: false` but the other layer is still applied, so partial failures degrade closed.
 
 State of the gate is logged to a `gate_log` table; the parent UI's "Today" tab shows the latest action (block/unblock) per kid plus whether they've earned unblock by the chore rule.
 
@@ -60,6 +62,7 @@ All config is environment variables. See `.env.example` for the full list.
 | `UNIFI_USER` | Local-admin username (recommend a dedicated `chore-bot` account) |
 | `UNIFI_PW` | Password for that account |
 | `UNIFI_SITE` | UniFi site identifier. Default `default` |
+| `UNIFI_ENFORCEMENT_MODE` | `traffic_rule` *(default)* or `mac_block`. See **How blocking works** above. |
 | `TZ` | Timezone for cron schedules. Default `America/New_York` |
 | `HISTORY_RETENTION_DAYS` | First-boot seed only for the in-app retention setting. Default `90`. After first boot, change it under Settings → history retention; the env var is ignored. |
 
@@ -87,6 +90,35 @@ The app resolves group IDs by name at runtime, so you can rename the groups via 
 
 1. In UniFi OS, create a local admin account (one that authenticates against the controller, not your Ubiquiti SSO) with network admin permissions on the site you'll target. The exact menu wording depends on firmware — look for "local-only" or "restricted" admin options. Recommended username: `chore-bot`.
 2. Make sure the controller is reachable from the chore-app container over HTTPS. The app uses cookie-based auth and tolerates self-signed certs.
+3. **If `UNIFI_ENFORCEMENT_MODE=traffic_rule` (the default)**, create one disabled Traffic Rule per kid before starting the app. The app finds rules by description and toggles `enabled`; it does not create them.
+
+   Description format: `chorepass:<kid-slug>` (must match the kid's `slug` exactly).
+
+   Required fields:
+   - `enabled: false` (chorepass toggles this)
+   - `action: BLOCK`
+   - `matching_target: INTERNET`
+   - `target_devices`: one `{ type: "CLIENT", client_mac: "..." }` entry per MAC for that kid
+
+   On UniFi Network 9.x and earlier the Traffic Rules UI lives at **Settings → Internet → Traffic Management → Traffic Rules**. On Network 10.x the v2 Traffic Rules API still works but is no longer exposed in the UI — create the rules via `POST /proxy/network/v2/api/site/<site>/trafficrules`. Example payload:
+
+   ```json
+   {
+     "description": "chorepass:kid-one",
+     "enabled": false,
+     "action": "BLOCK",
+     "matching_target": "INTERNET",
+     "target_devices": [
+       { "type": "CLIENT", "client_mac": "aa:bb:cc:dd:ee:ff" }
+     ],
+     "domains": [], "ip_addresses": [], "ip_ranges": [],
+     "regions": [], "app_category_ids": [], "app_ids": [], "network_ids": [],
+     "bandwidth_limit": { "enabled": false, "download_limit_kbps": 1024, "upload_limit_kbps": 1024 },
+     "schedule": { "mode": "ALWAYS", "repeat_on_days": [], "time_all_day": false, "time_range_start": "09:00", "time_range_end": "17:00" }
+   }
+   ```
+
+   Whenever a kid's MAC list changes in chorepass, update the rule's `target_devices` to match (chorepass does not currently sync this automatically — tracked separately).
 
 ## Daily flow
 

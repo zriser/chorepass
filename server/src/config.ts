@@ -37,5 +37,10 @@ export const config = {
     user: process.env.UNIFI_USER ?? "",
     password: process.env.UNIFI_PW ?? "",
     site: process.env.UNIFI_SITE ?? "default",
+    // traffic_rule: toggle a per-kid Traffic Rule (kid stays on Wi-Fi, only internet drops)
+    // mac_block: legacy per-MAC `cmd/stamgr block-sta` (disconnects from Wi-Fi entirely)
+    enforcementMode: (process.env.UNIFI_ENFORCEMENT_MODE ?? "traffic_rule") as
+      | "traffic_rule"
+      | "mac_block",
   },
 };

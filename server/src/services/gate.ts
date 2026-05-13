@@ -1,4 +1,5 @@
 import { db } from "../db.js";
+import { config } from "../config.js";
 import { pihole } from "./pihole.js";
 import { unifi } from "./unifi.js";
 
@@ -14,6 +15,14 @@ export type GateResult = {
   unifiOk: boolean | null;
   error: string | null;
 };
+
+type KidRow = { id: number; slug: string };
+
+function getKid(kidId: number): KidRow | null {
+  return (
+    (db.prepare("SELECT id, slug FROM kids WHERE id = ?").get(kidId) as KidRow | undefined) ?? null
+  );
+}
 
 function getMacsForKid(kidId: number): string[] {
   const rows = db
@@ -43,11 +52,39 @@ function logGate(
   );
 }
 
+async function applyUnifi(
+  kid: KidRow,
+  macs: string[],
+  action: GateAction,
+): Promise<{ ok: boolean; errors: string[] }> {
+  const errors: string[] = [];
+  if (config.unifi.enforcementMode === "traffic_rule") {
+    const r =
+      action === "block"
+        ? await unifi.enableTrafficRuleForSlug(kid.slug)
+        : await unifi.disableTrafficRuleForSlug(kid.slug);
+    if (!r.ok) errors.push(`chorepass:${kid.slug}: ${r.error ?? "unknown"}`);
+  } else {
+    for (const mac of macs) {
+      const r = action === "block" ? await unifi.block(mac) : await unifi.unblock(mac);
+      if (!r.ok) errors.push(`${mac}: ${r.error ?? "unknown"}`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 async function applyToKid(
   kidId: number,
   action: GateAction,
   source: GateSource,
 ): Promise<GateResult> {
+  const kid = getKid(kidId);
+  if (!kid) {
+    const err = `unknown kid id ${kidId}`;
+    logGate(kidId, action, source, null, null, err);
+    return { ok: false, kidId, action, macs: 0, piholeOk: null, unifiOk: null, error: err };
+  }
+
   const macs = getMacsForKid(kidId);
   if (macs.length === 0) {
     const err = "no MACs configured for kid";
@@ -56,21 +93,18 @@ async function applyToKid(
   }
 
   const piholeErrors: string[] = [];
-  const unifiErrors: string[] = [];
-
   for (const mac of macs) {
     const pi = action === "block" ? await pihole.moveToBlocked(mac) : await pihole.moveToUnblocked(mac);
     if (!pi.ok) piholeErrors.push(`${mac}: ${pi.error ?? "unknown"}`);
-
-    const un = action === "block" ? await unifi.block(mac) : await unifi.unblock(mac);
-    if (!un.ok) unifiErrors.push(`${mac}: ${un.error ?? "unknown"}`);
   }
 
+  const un = await applyUnifi(kid, macs, action);
+
   const piholeOk = piholeErrors.length === 0;
-  const unifiOk = unifiErrors.length === 0;
+  const unifiOk = un.ok;
   const errorParts: string[] = [];
   if (piholeErrors.length) errorParts.push(`pihole: ${piholeErrors.join("; ")}`);
-  if (unifiErrors.length) errorParts.push(`unifi: ${unifiErrors.join("; ")}`);
+  if (un.errors.length) errorParts.push(`unifi: ${un.errors.join("; ")}`);
   const error = errorParts.length ? errorParts.join(" | ") : null;
 
   logGate(kidId, action, source, piholeOk, unifiOk, error);
