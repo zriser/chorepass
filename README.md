@@ -114,9 +114,11 @@ The app resolves group IDs by name at runtime, so you can rename the groups via 
      "domains": [], "ip_addresses": [], "ip_ranges": [],
      "regions": [], "app_category_ids": [], "app_ids": [], "network_ids": [],
      "bandwidth_limit": { "enabled": false, "download_limit_kbps": 1024, "upload_limit_kbps": 1024 },
-     "schedule": { "mode": "ALWAYS", "repeat_on_days": [], "time_all_day": false, "time_range_start": "09:00", "time_range_end": "17:00" }
+     "schedule": { "mode": "ALWAYS", "repeat_on_days": [], "time_all_day": true }
    }
    ```
+
+   The `schedule` field is load-bearing: leaving `time_all_day: false` with a `time_range_start` / `time_range_end` pair silently restricts enforcement to that window even when `mode` is `"ALWAYS"`. Use `time_all_day: true` (and omit the range fields) for a 24/7 rule.
 
    Whenever a kid's MAC list changes in chorepass, update the rule's `target_devices` to match (chorepass does not currently sync this automatically — tracked separately).
 
