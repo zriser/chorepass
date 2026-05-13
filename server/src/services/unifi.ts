@@ -11,6 +11,18 @@ type UserRecord = {
   name?: string;
 };
 
+// Minimal type for v2 trafficrules — we round-trip the full object on PUT,
+// so unknown fields are preserved via index signature.
+type TrafficRule = {
+  _id: string;
+  description: string;
+  enabled: boolean;
+  action: string;
+  matching_target: string;
+  target_devices?: Array<{ type: string; client_mac?: string }>;
+  [key: string]: unknown;
+};
+
 const insecureAgent = new Agent({ connect: { rejectUnauthorized: false } });
 
 class UnifiClient {
@@ -144,6 +156,41 @@ class UnifiClient {
     const u = await this.getUser(mac);
     if (!u) return null;
     return u.blocked === true;
+  }
+
+  private trafficRulesPath(id?: string): string {
+    const base = `/proxy/network/v2/api/site/${this.site}/trafficrules`;
+    return id ? `${base}/${id}` : base;
+  }
+
+  private async findTrafficRuleByDescription(description: string): Promise<TrafficRule | null> {
+    const rules = await this.request<TrafficRule[]>("GET", this.trafficRulesPath());
+    return rules.find((r) => r.description === description) ?? null;
+  }
+
+  // Toggle the `enabled` field on a v2 Traffic Rule, found by its description.
+  // PUT requires the entire payload back — partial bodies are rejected.
+  async setTrafficRuleEnabled(description: string, enabled: boolean): Promise<UnifiResult> {
+    try {
+      const rule = await this.findTrafficRuleByDescription(description);
+      if (!rule) {
+        return { ok: false, error: `no traffic rule with description "${description}"` };
+      }
+      if (rule.enabled === enabled) return { ok: true };
+      rule.enabled = enabled;
+      await this.request("PUT", this.trafficRulesPath(rule._id), rule);
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e) };
+    }
+  }
+
+  enableTrafficRuleForSlug(slug: string): Promise<UnifiResult> {
+    return this.setTrafficRuleEnabled(`chorepass:${slug}`, true);
+  }
+
+  disableTrafficRuleForSlug(slug: string): Promise<UnifiResult> {
+    return this.setTrafficRuleEnabled(`chorepass:${slug}`, false);
   }
 }
 
