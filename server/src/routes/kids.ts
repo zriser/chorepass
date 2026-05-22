@@ -31,11 +31,22 @@ type KidRow = {
 };
 
 type MacRow = { id: number; kid_id: number; mac: string; label: string | null };
+type IpRow = { id: number; kid_id: number; ip: string; label: string | null };
 type BedtimeRow = { kid_id: number; weekday: number; time: string };
 type BedtimeInput = { weekday: number; time: string };
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+
+function validateIp(raw: unknown): string {
+  if (raw === null || raw === undefined) throw new Error("ip is required");
+  const s = String(raw).trim();
+  if (!IPV4_RE.test(s)) {
+    throw new Error(`ip must be a dotted-quad IPv4 address (got "${s}")`);
+  }
+  return s;
+}
 
 function normalizeColor(raw: unknown): string | null {
   if (raw === null || raw === undefined || raw === "") return null;
@@ -78,10 +89,13 @@ function loadKid(id: number) {
   const macs = db
     .prepare("SELECT id, mac, label FROM kid_macs WHERE kid_id = ? ORDER BY id")
     .all(id) as Omit<MacRow, "kid_id">[];
+  const ips = db
+    .prepare("SELECT id, ip, label FROM kid_ips WHERE kid_id = ? ORDER BY id")
+    .all(id) as Omit<IpRow, "kid_id">[];
   const bedtimes = db
     .prepare("SELECT weekday, time FROM kid_bedtimes WHERE kid_id = ? ORDER BY weekday")
     .all(id) as Omit<BedtimeRow, "kid_id">[];
-  return { ...kid, macs, bedtimes };
+  return { ...kid, macs, ips, bedtimes };
 }
 
 function loadKidBySlug(slug: string) {
@@ -93,6 +107,7 @@ function loadKidBySlug(slug: string) {
 router.get("/", (_req, res) => {
   const kids = db.prepare("SELECT * FROM kids ORDER BY name").all() as KidRow[];
   const macs = db.prepare("SELECT id, kid_id, mac, label FROM kid_macs").all() as MacRow[];
+  const ips = db.prepare("SELECT id, kid_id, ip, label FROM kid_ips").all() as IpRow[];
   const bedtimes = db
     .prepare("SELECT kid_id, weekday, time FROM kid_bedtimes ORDER BY weekday")
     .all() as BedtimeRow[];
@@ -101,6 +116,12 @@ router.get("/", (_req, res) => {
     const list = macsByKid.get(m.kid_id) ?? [];
     list.push({ id: m.id, mac: m.mac, label: m.label });
     macsByKid.set(m.kid_id, list);
+  }
+  const ipsByKid = new Map<number, Omit<IpRow, "kid_id">[]>();
+  for (const i of ips) {
+    const list = ipsByKid.get(i.kid_id) ?? [];
+    list.push({ id: i.id, ip: i.ip, label: i.label });
+    ipsByKid.set(i.kid_id, list);
   }
   const bedtimesByKid = new Map<number, Omit<BedtimeRow, "kid_id">[]>();
   for (const b of bedtimes) {
@@ -112,23 +133,27 @@ router.get("/", (_req, res) => {
     kids.map((k) => ({
       ...k,
       macs: macsByKid.get(k.id) ?? [],
+      ips: ipsByKid.get(k.id) ?? [],
       bedtimes: bedtimesByKid.get(k.id) ?? [],
     })),
   );
 });
 
 router.post("/", requireParent, (req, res) => {
-  const { name, slug, bedtimes, avatar, color, macs } = req.body ?? {};
+  const { name, slug, bedtimes, avatar, color, macs, ips } = req.body ?? {};
   if (!name || !slug) {
     return res.status(400).json({ error: "name, slug required" });
   }
   const macList: { mac: string; label?: string }[] = Array.isArray(macs) ? macs : [];
+  const ipList: { ip: string; label?: string }[] = Array.isArray(ips) ? ips : [];
 
   let parsedBedtimes: BedtimeInput[];
   let parsedColor: string | null;
+  let parsedIps: { ip: string; label: string | null }[];
   try {
     parsedBedtimes = parseBedtimes(bedtimes ?? []);
     parsedColor = normalizeColor(color);
+    parsedIps = ipList.map((i) => ({ ip: validateIp(i.ip), label: i.label ?? null }));
   } catch (e: any) {
     return res.status(400).json({ error: String(e?.message ?? e) });
   }
@@ -144,6 +169,10 @@ router.post("/", requireParent, (req, res) => {
     for (const m of macList) {
       insertMac.run(kidId, m.mac.toLowerCase(), m.label ?? null);
     }
+    const insertIp = db.prepare(
+      "INSERT INTO kid_ips (kid_id, ip, label) VALUES (?, ?, ?)",
+    );
+    for (const i of parsedIps) insertIp.run(kidId, i.ip, i.label);
     const insertBedtime = db.prepare(
       "INSERT INTO kid_bedtimes (kid_id, weekday, time) VALUES (?, ?, ?)",
     );
@@ -165,13 +194,20 @@ router.put("/:id", requireParent, (req, res) => {
   const existing = loadKid(id);
   if (!existing) return res.status(404).json({ error: "not found" });
 
-  const { name, slug, bedtimes, avatar, color, macs } = req.body ?? {};
+  const { name, slug, bedtimes, avatar, color, macs, ips } = req.body ?? {};
 
   let parsedBedtimes: BedtimeInput[] | null = null;
   let parsedColor: string | null | undefined;
+  let parsedIps: { ip: string; label: string | null }[] | null = null;
   try {
     if (bedtimes !== undefined) parsedBedtimes = parseBedtimes(bedtimes);
     if (color !== undefined) parsedColor = normalizeColor(color);
+    if (Array.isArray(ips)) {
+      parsedIps = ips.map((i: any) => ({
+        ip: validateIp(i.ip),
+        label: i.label ?? null,
+      }));
+    }
   } catch (e: any) {
     return res.status(400).json({ error: String(e?.message ?? e) });
   }
@@ -192,6 +228,13 @@ router.put("/:id", requireParent, (req, res) => {
         "INSERT INTO kid_macs (kid_id, mac, label) VALUES (?, ?, ?)",
       );
       for (const m of macs) insertMac.run(id, m.mac.toLowerCase(), m.label ?? null);
+    }
+    if (parsedIps !== null) {
+      db.prepare("DELETE FROM kid_ips WHERE kid_id = ?").run(id);
+      const insertIp = db.prepare(
+        "INSERT INTO kid_ips (kid_id, ip, label) VALUES (?, ?, ?)",
+      );
+      for (const i of parsedIps) insertIp.run(id, i.ip, i.label);
     }
     if (parsedBedtimes !== null) {
       db.prepare("DELETE FROM kid_bedtimes WHERE kid_id = ?").run(id);

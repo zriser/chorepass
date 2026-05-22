@@ -23,6 +23,34 @@ type TrafficRule = {
   [key: string]: unknown;
 };
 
+// Classic firewall entities (the `/rest/firewallgroup` and `/rest/firewallrule`
+// endpoints). These compile to iptables on USG, unlike v2 Traffic Rules which
+// are a no-op on legacy hardware.
+type FirewallGroup = {
+  _id: string;
+  name: string;
+  group_type: string;
+  group_members: string[];
+  [key: string]: unknown;
+};
+
+type FirewallRule = {
+  _id: string;
+  name: string;
+  ruleset: string;
+  rule_index: string;
+  action: string;
+  enabled: boolean;
+  src_firewallgroup_ids?: string[];
+  [key: string]: unknown;
+};
+
+// Reserved rule_index range for chorepass-managed WAN_OUT drop rules. Picked
+// high to stay clear of typical user-added rules; multiple chorepass rules
+// share the same index — controller orders by _id as tiebreaker, which is
+// fine since they're independent per-IP drops.
+const CHOREPASS_RULE_INDEX = "2500";
+
 const insecureAgent = new Agent({ connect: { rejectUnauthorized: false } });
 
 class UnifiClient {
@@ -191,6 +219,140 @@ class UnifiClient {
 
   disableTrafficRuleForSlug(slug: string): Promise<UnifiResult> {
     return this.setTrafficRuleEnabled(`chorepass:${slug}`, false);
+  }
+
+  // ---- Classic firewall (USG-enforced) ------------------------------------
+
+  private firewallGroupPath(id?: string): string {
+    const base = `/proxy/network/api/s/${this.site}/rest/firewallgroup`;
+    return id ? `${base}/${id}` : base;
+  }
+
+  private firewallRulePath(id?: string): string {
+    const base = `/proxy/network/api/s/${this.site}/rest/firewallrule`;
+    return id ? `${base}/${id}` : base;
+  }
+
+  private static groupNameForSlug(slug: string): string {
+    return `chorepass:${slug}_ips`;
+  }
+
+  private static ruleNameForSlug(slug: string): string {
+    return `chorepass:${slug}_block`;
+  }
+
+  private async findFirewallGroupByName(name: string): Promise<FirewallGroup | null> {
+    const r = await this.request<{ data: FirewallGroup[] }>("GET", this.firewallGroupPath());
+    return r.data.find((g) => g.name === name) ?? null;
+  }
+
+  private async findFirewallRuleByName(name: string): Promise<FirewallRule | null> {
+    const r = await this.request<{ data: FirewallRule[] }>("GET", this.firewallRulePath());
+    return r.data.find((rl) => rl.name === name) ?? null;
+  }
+
+  // Ensure the kid's firewall group exists and has exactly these IPs as members.
+  // address-group accepts bare IPv4 addresses (no CIDR — confirmed via spike).
+  async syncKidGroup(slug: string, ips: string[]): Promise<{ groupId: string }> {
+    const name = UnifiClient.groupNameForSlug(slug);
+    const desired = [...ips].sort();
+    const existing = await this.findFirewallGroupByName(name);
+    if (!existing) {
+      const resp = await this.request<{ data: FirewallGroup[] }>(
+        "POST",
+        this.firewallGroupPath(),
+        { name, group_type: "address-group", group_members: desired },
+      );
+      return { groupId: resp.data[0]._id };
+    }
+    const current = [...existing.group_members].sort();
+    if (current.length === desired.length && current.every((x, i) => x === desired[i])) {
+      return { groupId: existing._id };
+    }
+    existing.group_members = desired;
+    await this.request("PUT", this.firewallGroupPath(existing._id), existing);
+    return { groupId: existing._id };
+  }
+
+  // Ensure a WAN_OUT drop rule exists for this kid's group. Created disabled by
+  // default — caller toggles `enabled` via setFirewallRuleEnabledForSlug.
+  async syncKidBlockRule(slug: string, groupId: string): Promise<{ ruleId: string }> {
+    const name = UnifiClient.ruleNameForSlug(slug);
+    const existing = await this.findFirewallRuleByName(name);
+    if (existing) {
+      const currentGroupIds = existing.src_firewallgroup_ids ?? [];
+      const needsUpdate =
+        currentGroupIds.length !== 1 || currentGroupIds[0] !== groupId;
+      if (needsUpdate) {
+        existing.src_firewallgroup_ids = [groupId];
+        await this.request("PUT", this.firewallRulePath(existing._id), existing);
+      }
+      return { ruleId: existing._id };
+    }
+    const payload = {
+      name,
+      ruleset: "WAN_OUT",
+      rule_index: CHOREPASS_RULE_INDEX,
+      action: "drop",
+      protocol: "all",
+      enabled: false,
+      src_firewallgroup_ids: [groupId],
+      src_address: "",
+      src_mac_address: "",
+      src_networkconf_id: "",
+      src_networkconf_type: "NETv4",
+      dst_address: "",
+      dst_firewallgroup_ids: [],
+      dst_networkconf_id: "",
+      dst_networkconf_type: "NETv4",
+      icmp_typename: "",
+      ipsec: "",
+      logging: false,
+      state_established: false,
+      state_invalid: false,
+      state_new: false,
+      state_related: false,
+    };
+    const resp = await this.request<{ data: FirewallRule[] }>(
+      "POST",
+      this.firewallRulePath(),
+      payload,
+    );
+    return { ruleId: resp.data[0]._id };
+  }
+
+  async setFirewallRuleEnabledForSlug(slug: string, enabled: boolean): Promise<UnifiResult> {
+    try {
+      const name = UnifiClient.ruleNameForSlug(slug);
+      const rule = await this.findFirewallRuleByName(name);
+      if (!rule) {
+        return { ok: false, error: `no firewall rule named "${name}"` };
+      }
+      if (rule.enabled === enabled) return { ok: true };
+      rule.enabled = enabled;
+      await this.request("PUT", this.firewallRulePath(rule._id), rule);
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e) };
+    }
+  }
+
+  // Bootstrap + enable in one call. Idempotent: safe to call repeatedly.
+  async enableFirewallBlockForSlug(slug: string, ips: string[]): Promise<UnifiResult> {
+    try {
+      if (ips.length === 0) {
+        return { ok: false, error: "no IPs configured for kid" };
+      }
+      const { groupId } = await this.syncKidGroup(slug, ips);
+      await this.syncKidBlockRule(slug, groupId);
+      return await this.setFirewallRuleEnabledForSlug(slug, true);
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e) };
+    }
+  }
+
+  disableFirewallBlockForSlug(slug: string): Promise<UnifiResult> {
+    return this.setFirewallRuleEnabledForSlug(slug, false);
   }
 }
 

@@ -31,6 +31,13 @@ function getMacsForKid(kidId: number): string[] {
   return rows.map((r) => r.mac);
 }
 
+function getIpsForKid(kidId: number): string[] {
+  const rows = db
+    .prepare("SELECT ip FROM kid_ips WHERE kid_id = ?")
+    .all(kidId) as { ip: string }[];
+  return rows.map((r) => r.ip);
+}
+
 function logGate(
   kidId: number | null,
   action: GateAction,
@@ -55,6 +62,7 @@ function logGate(
 async function applyUnifi(
   kid: KidRow,
   macs: string[],
+  ips: string[],
   action: GateAction,
 ): Promise<{ ok: boolean | null; errors: string[] }> {
   const errors: string[] = [];
@@ -62,7 +70,13 @@ async function applyUnifi(
   if (mode === "none") {
     return { ok: null, errors: [] };
   }
-  if (mode === "traffic_rule") {
+  if (mode === "firewall_rule") {
+    const r =
+      action === "block"
+        ? await unifi.enableFirewallBlockForSlug(kid.slug, ips)
+        : await unifi.disableFirewallBlockForSlug(kid.slug);
+    if (!r.ok) errors.push(`chorepass:${kid.slug}_block: ${r.error ?? "unknown"}`);
+  } else if (mode === "traffic_rule") {
     const r =
       action === "block"
         ? await unifi.enableTrafficRuleForSlug(kid.slug)
@@ -90,19 +104,31 @@ async function applyToKid(
   }
 
   const macs = getMacsForKid(kidId);
-  if (macs.length === 0) {
+  const ips = getIpsForKid(kidId);
+  const mode = config.unifi.enforcementMode;
+  // firewall_rule mode is keyed on IPs; mac_block / traffic_rule / Pi-hole are keyed on MACs.
+  // Require whichever identifier list the chosen mode needs.
+  const needsIps = mode === "firewall_rule";
+  const needsMacs = mode !== "firewall_rule" && mode !== "none";
+  if (needsIps && ips.length === 0) {
+    const err = "no IPs configured for kid (firewall_rule mode)";
+    logGate(kidId, action, source, null, null, err);
+    return { ok: false, kidId, action, macs: 0, piholeOk: null, unifiOk: null, error: err };
+  }
+  if (needsMacs && macs.length === 0) {
     const err = "no MACs configured for kid";
     logGate(kidId, action, source, null, null, err);
     return { ok: false, kidId, action, macs: 0, piholeOk: null, unifiOk: null, error: err };
   }
 
+  // Pi-hole is MAC-keyed regardless of UniFi mode — skip if no MACs are configured.
   const piholeErrors: string[] = [];
   for (const mac of macs) {
     const pi = action === "block" ? await pihole.moveToBlocked(mac) : await pihole.moveToUnblocked(mac);
     if (!pi.ok) piholeErrors.push(`${mac}: ${pi.error ?? "unknown"}`);
   }
 
-  const un = await applyUnifi(kid, macs, action);
+  const un = await applyUnifi(kid, macs, ips, action);
 
   const piholeOk = piholeErrors.length === 0;
   const unifiOk = un.ok;
