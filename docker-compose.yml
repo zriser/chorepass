@@ -32,9 +32,10 @@ services:
       PIHOLE_UNBLOCKED_GROUP: Kids_Unblocked
       PIHOLE_BLOCKED_GROUP: Kids_Blocked
       UNIFI_SITE: default
-      # traffic_rule | mac_block | none. Defaults to traffic_rule; override via Portainer
-      # stack env vars (e.g. UNIFI_ENFORCEMENT_MODE=none on legacy USG hardware).
-      UNIFI_ENFORCEMENT_MODE: ${UNIFI_ENFORCEMENT_MODE:-traffic_rule}
+      # firewall_rule | traffic_rule | mac_block | none. Defaults to firewall_rule —
+      # works on legacy USG and UDM-line gateways alike (classic Firewall Rule + Group
+      # keyed on per-kid static IPs). Override via Portainer stack env vars if needed.
+      UNIFI_ENFORCEMENT_MODE: ${UNIFI_ENFORCEMENT_MODE:-firewall_rule}
 
       # Secrets — must be supplied via Portainer stack env vars
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
