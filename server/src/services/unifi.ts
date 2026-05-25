@@ -45,11 +45,11 @@ type FirewallRule = {
   [key: string]: unknown;
 };
 
-// Reserved rule_index range for chorepass-managed WAN_OUT drop rules. Picked
-// high to stay clear of typical user-added rules; multiple chorepass rules
-// share the same index — controller orders by _id as tiebreaker, which is
-// fine since they're independent per-IP drops.
-const CHOREPASS_RULE_INDEX = "2500";
+// Reserved rule_index base for chorepass-managed WAN_OUT drop rules. Picked
+// high to stay clear of typical user-added rules. The USG rejects a second rule
+// at an already-used index (api.err.FirewallRuleIndexExisted), so each kid MUST
+// get a distinct index — callers pass `2500 + kidId` (see gate.ts).
+export const CHOREPASS_RULE_INDEX_BASE = 2500;
 
 const insecureAgent = new Agent({ connect: { rejectUnauthorized: false } });
 
@@ -276,7 +276,11 @@ class UnifiClient {
 
   // Ensure a WAN_OUT drop rule exists for this kid's group. Created disabled by
   // default — caller toggles `enabled` via setFirewallRuleEnabledForSlug.
-  async syncKidBlockRule(slug: string, groupId: string): Promise<{ ruleId: string }> {
+  async syncKidBlockRule(
+    slug: string,
+    groupId: string,
+    ruleIndex: string,
+  ): Promise<{ ruleId: string }> {
     const name = UnifiClient.ruleNameForSlug(slug);
     const existing = await this.findFirewallRuleByName(name);
     if (existing) {
@@ -292,7 +296,7 @@ class UnifiClient {
     const payload = {
       name,
       ruleset: "WAN_OUT",
-      rule_index: CHOREPASS_RULE_INDEX,
+      rule_index: ruleIndex,
       action: "drop",
       protocol: "all",
       enabled: false,
@@ -338,13 +342,17 @@ class UnifiClient {
   }
 
   // Bootstrap + enable in one call. Idempotent: safe to call repeatedly.
-  async enableFirewallBlockForSlug(slug: string, ips: string[]): Promise<UnifiResult> {
+  async enableFirewallBlockForSlug(
+    slug: string,
+    ips: string[],
+    ruleIndex: string,
+  ): Promise<UnifiResult> {
     try {
       if (ips.length === 0) {
         return { ok: false, error: "no IPs configured for kid" };
       }
       const { groupId } = await this.syncKidGroup(slug, ips);
-      await this.syncKidBlockRule(slug, groupId);
+      await this.syncKidBlockRule(slug, groupId, ruleIndex);
       return await this.setFirewallRuleEnabledForSlug(slug, true);
     } catch (e: any) {
       return { ok: false, error: String(e?.message ?? e) };

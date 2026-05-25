@@ -1,7 +1,7 @@
 import { db } from "../db.js";
 import { config } from "../config.js";
 import { pihole } from "./pihole.js";
-import { unifi } from "./unifi.js";
+import { unifi, CHOREPASS_RULE_INDEX_BASE } from "./unifi.js";
 
 export type GateSource = "schedule" | "chore" | "manual";
 export type GateAction = "block" | "unblock";
@@ -71,9 +71,12 @@ async function applyUnifi(
     return { ok: null, errors: [] };
   }
   if (mode === "firewall_rule") {
+    // Each kid needs a distinct firewall rule_index — the USG rejects a second
+    // rule at an already-used index (api.err.FirewallRuleIndexExisted).
+    const ruleIndex = String(CHOREPASS_RULE_INDEX_BASE + kid.id);
     const r =
       action === "block"
-        ? await unifi.enableFirewallBlockForSlug(kid.slug, ips)
+        ? await unifi.enableFirewallBlockForSlug(kid.slug, ips, ruleIndex)
         : await unifi.disableFirewallBlockForSlug(kid.slug);
     if (!r.ok) errors.push(`chorepass:${kid.slug}_block: ${r.error ?? "unknown"}`);
   } else if (mode === "traffic_rule") {
