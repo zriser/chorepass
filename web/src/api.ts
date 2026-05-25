@@ -34,6 +34,7 @@ export const api = {
 };
 
 export type Mac = { id: number; mac: string; label: string | null };
+export type Ip = { id: number; ip: string; label: string | null };
 export type Bedtime = { weekday: number; time: string };
 export type Kid = {
   id: number;
@@ -43,6 +44,7 @@ export type Kid = {
   color: string | null;
   created_at: string;
   macs: Mac[];
+  ips: Ip[];
   bedtimes: Bedtime[];
 };
 export type Assignment = {

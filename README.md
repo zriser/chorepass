@@ -9,12 +9,13 @@ It is opinionated and homelab-shaped: it expects **Pi-hole v6** and a **UniFi OS
 Two enforcement layers, toggled together:
 
 - **Pi-hole** — a `Kids_Blocked` group with a deny-all blocklist. Each kid's MACs move between `Kids_Unblocked` and `Kids_Blocked`. Members get DNS-level NXDOMAIN for everything. This is the heavy hammer.
-- **UniFi** — one of three strategies, picked by `UNIFI_ENFORCEMENT_MODE`:
-  - `traffic_rule` *(default)* — toggle a per-kid Traffic Rule (`chorepass:<slug>`) that blocks internet only. The kid stays on Wi-Fi and can still reach the chore-app's UI to check off chores. This is what you want for the daytime chore gate. **Requires a modern UniFi Cloud Gateway (UDM/UXG/UCG). See the USG note below.**
+- **UniFi** — one of four strategies, picked by `UNIFI_ENFORCEMENT_MODE`:
+  - `firewall_rule` *(default)* — classic Firewall Rule + Firewall Group keyed on each kid's static IPs. WAN_OUT drop rule on the kid's IP group when blocked, removed when unblocked. The kid stays on Wi-Fi and can still reach the chore-app on LAN; only internet egress is dropped at the gateway. **Works on all UniFi gateways including legacy USG**, because it compiles down to iptables on the gateway rather than relying on a UniFi OS feature. Requires per-kid static IPs configured in the **Kids** tab. Chorepass auto-creates the firewall group + rule on first block.
+  - `traffic_rule` — toggle a per-kid Traffic Rule (`chorepass:<slug>`) that blocks internet only. The kid stays on Wi-Fi and can still reach the chore-app's UI to check off chores. **Requires a modern UniFi Cloud Gateway (UDM/UXG/UCG).** Legacy USG accepts the API call but never enforces — use `firewall_rule` instead.
   - `mac_block` — the controller's per-MAC `cmd/stamgr block-sta` flag. Disconnects the device from Wi-Fi entirely. Useful for a hard bedtime "device off" semantic. Works on all UniFi gateways including legacy USG.
-  - `none` — skip the UniFi layer entirely; rely on Pi-hole alone. Use this if you're on a legacy USG and don't want the disconnect side effect of `mac_block`. Accepts the tradeoff that a kid using DNS-over-HTTPS or iCloud Private Relay can bypass the gate (Pi-hole sees no queries to deny).
+  - `none` — skip the UniFi layer entirely; rely on Pi-hole alone. Accepts the tradeoff that a kid using DNS-over-HTTPS or iCloud Private Relay can bypass the gate (Pi-hole sees no queries to deny).
 
-> **Legacy USG note.** The original UniFi Security Gateway line (UGW3 / USG-Pro-4 / USG-XG-8) **does not support v2 Traffic Rules.** The controller accepts the API call and stores the rule; the gateway silently never enforces it. If you're on USG hardware, set `UNIFI_ENFORCEMENT_MODE=none` (and accept the DoH-bypass risk) or `mac_block` (and accept the disconnect side effect). `traffic_rule` mode will appear to work in logs but produce no actual gateway enforcement. Upgrading to a Cloud Gateway (UDM/UXG/UCG) unlocks the `traffic_rule` mode without any code or config change.
+> **Legacy USG.** The original UniFi Security Gateway line (UGW3 / USG-Pro-4 / USG-XG-8) **does not support v2 Traffic Rules** — `traffic_rule` mode appears to work in the logs but produces no actual gateway enforcement. Use `firewall_rule` (the default) on USG hardware. The classic Firewall Rules + Firewall Groups API the new mode targets *does* compile to iptables on USG.
 
 If either layer fails the gate operation reports `ok: false` but the other layer is still applied, so partial failures degrade closed.
 
@@ -28,8 +29,8 @@ State of the gate is logged to a `gate_log` table; the parent UI's "Today" tab s
 - Pi-hole v6 (the v6 API is required — v5 will not work)
 - UniFi OS controller (Dream Machine, Cloud Gateway, UNVR, etc.) reachable over HTTPS
 - A reverse proxy fronting the app on your LAN (Caddy, Nginx Proxy Manager, etc.) — the app does not terminate TLS
-- A device-to-kid MAC mapping you actually know and trust
-- **Stable MACs on the kid devices.** iOS "Private Wi-Fi Address" and Android MAC randomization will silently break the gate by handing each device a fresh MAC per network. Disable randomization for your home SSID on every kid device, or the app will appear "stuck blocked" the moment a device rerolls.
+- A device-to-kid mapping you actually know and trust — by MAC for the Pi-hole + `mac_block` + `traffic_rule` paths, by static IP for the `firewall_rule` path
+- **Stable identifiers.** iOS "Private Wi-Fi Address" and Android MAC randomization will silently break MAC-keyed enforcement by handing each device a fresh MAC per network. Two mitigations: (a) disable randomization for your home SSID on every kid device, or (b) use `firewall_rule` mode with per-device static IPs set on the device itself (manual IP in iOS Wi-Fi settings, not just a DHCP reservation — reservations are keyed on the current MAC and will un-bind on rotation). The default `firewall_rule` mode is the most robust against MAC drift if you go with (b).
 
 ## Quick start
 
@@ -45,7 +46,7 @@ App listens on `:3000`. Point your reverse proxy at it (LAN-only access list str
 
 First boot:
 1. The `PARENT_PIN_DEFAULT` from your `.env` is hashed into the settings table — change it from the in-app **Settings** tab afterward.
-2. Add kids in the **Kids** tab. For each kid: name, slug (used in URLs), per-weekday bedtimes (each day can have its own time, or be left empty to skip a scheduled block), and one or more device MACs.
+2. Add kids in the **Kids** tab. For each kid: name, slug (used in URLs), per-weekday bedtimes (each day can have its own time, or be left empty to skip a scheduled block), one or more device MACs (used by Pi-hole + bedtime MAC-block), and one or more device IPs (used by the daytime `firewall_rule` gate — required if `UNIFI_ENFORCEMENT_MODE=firewall_rule`; populate before the next scheduled enforcement or the gate will log a no-ops error for that kid).
 3. Add chores in the **Chores** tab and assign them to kids per weekday.
 4. Hand each kid the URL `https://<your-host>/kid/<slug>` — that's their view. There's no auth on the kid page; treat the slug like a shared secret.
 
@@ -65,7 +66,7 @@ All config is environment variables. See `.env.example` for the full list.
 | `UNIFI_USER` | Local-admin username (recommend a dedicated `chore-bot` account) |
 | `UNIFI_PW` | Password for that account |
 | `UNIFI_SITE` | UniFi site identifier. Default `default` |
-| `UNIFI_ENFORCEMENT_MODE` | `traffic_rule` *(default)*, `mac_block`, or `none`. Set to `none` on legacy USG hardware. See **How blocking works** above. |
+| `UNIFI_ENFORCEMENT_MODE` | `firewall_rule` *(default)*, `traffic_rule`, `mac_block`, or `none`. Default works on USG and UDM-line gateways; pick `traffic_rule` only on UniFi OS hardware if you prefer the v2 API surface. See **How blocking works** above. |
 | `TZ` | Timezone for cron schedules. Default `America/New_York` |
 | `HISTORY_RETENTION_DAYS` | First-boot seed only for the in-app retention setting. Default `90`. After first boot, change it under Settings → history retention; the env var is ignored. |
 
@@ -93,7 +94,13 @@ The app resolves group IDs by name at runtime, so you can rename the groups via 
 
 1. In UniFi OS, create a local admin account (one that authenticates against the controller, not your Ubiquiti SSO) with network admin permissions on the site you'll target. The exact menu wording depends on firmware — look for "local-only" or "restricted" admin options. Recommended username: `chore-bot`.
 2. Make sure the controller is reachable from the chore-app container over HTTPS. The app uses cookie-based auth and tolerates self-signed certs.
-3. **If `UNIFI_ENFORCEMENT_MODE=traffic_rule` (the default)**, create one disabled Traffic Rule per kid before starting the app. The app finds rules by description and toggles `enabled`; it does not create them.
+3. **If `UNIFI_ENFORCEMENT_MODE=firewall_rule` (the default)**, there's no manual UniFi setup. Chorepass auto-creates the firewall group `chorepass:<slug>_ips` (address-group) and the WAN_OUT drop rule `chorepass:<slug>_block` on the first block attempt. You only need to enter each kid's static IPs in the **Kids** tab.
+
+   Pick a static-IP strategy per device:
+   - **Manual IP on the device** (most robust) — iOS: Wi-Fi → (i) on home network → Configure IP → Manual. Enter IP, subnet, router, DNS. Survives iOS updates re-enabling Private Wi-Fi Address.
+   - **DHCP reservation on the controller** (easier admin) — Clients → pick the device → Fixed IP. Note that reservations are keyed on the device's current MAC: if that MAC is randomized (locally-administered bit set, empty OUI in the UniFi station list), the reservation un-binds the next time iOS/Android rotates the MAC. Disable Private Wi-Fi Address first if you go this route.
+   - The mechanism: WAN_OUT only sees egress to the WAN interface. Intra-LAN traffic (kid → chorepass at its LAN IP, kid → LAN DNS) never traverses WAN_OUT, so it remains reachable even when blocked. Only internet-bound packets drop, including VPN handshakes.
+4. **If `UNIFI_ENFORCEMENT_MODE=traffic_rule`** (UDM-line gateways only), create one disabled Traffic Rule per kid before starting the app. The app finds rules by description and toggles `enabled`; it does not create them.
 
    Description format: `chorepass:<kid-slug>` (must match the kid's `slug` exactly).
 
@@ -152,7 +159,7 @@ npm run dev
 
 Or run them in separate terminals: `npm --prefix server run dev` and `npm --prefix web run dev`. The web dev server proxies `/api` to the server on `:3000` (see `web/vite.config.ts`).
 
-`server/src/scripts/test-pihole.ts` and `test-unifi.ts` exercise the integrations against your real controllers — use a non-critical test MAC.
+`server/src/scripts/test-pihole.ts` and `test-unifi.ts` exercise the integrations against your real controllers — use a non-critical test MAC. `test-station-probe.mjs` reports, per configured kid IP, whether the UniFi controller currently sees that IP bound to a real hardware MAC or a randomized one (so you can spot devices where the gate is at risk of silently breaking on MAC rotation).
 
 ## License
 

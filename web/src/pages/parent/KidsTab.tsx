@@ -14,6 +14,7 @@ type Draft = {
   // Stored as #RRGGBB lowercase, or "" to use the name-hashed default.
   color: string;
   macs: { mac: string; label: string }[];
+  ips: { ip: string; label: string }[];
 };
 
 // Display order in the bedtime grid: Mon..Sun. Stored values stay 0=Sun..6=Sat
@@ -35,6 +36,7 @@ const EMPTY: Draft = {
   avatar: "",
   color: "",
   macs: [{ mac: "", label: "" }],
+  ips: [{ ip: "", label: "" }],
 };
 
 function bedtimesToDraft(bedtimes: Bedtime[]): string[] {
@@ -93,7 +95,12 @@ export default function KidsTab() {
   }, [refresh]);
 
   const startNew = () =>
-    setDraft({ ...EMPTY, bedtimes: [...EMPTY.bedtimes], macs: [{ mac: "", label: "" }] });
+    setDraft({
+      ...EMPTY,
+      bedtimes: [...EMPTY.bedtimes],
+      macs: [{ mac: "", label: "" }],
+      ips: [{ ip: "", label: "" }],
+    });
   const startEdit = (k: Kid) =>
     setDraft({
       id: k.id,
@@ -105,6 +112,9 @@ export default function KidsTab() {
       macs: k.macs.length
         ? k.macs.map((m) => ({ mac: m.mac, label: m.label ?? "" }))
         : [{ mac: "", label: "" }],
+      ips: k.ips.length
+        ? k.ips.map((i) => ({ ip: i.ip, label: i.label ?? "" }))
+        : [{ ip: "", label: "" }],
     });
 
   const save = async () => {
@@ -123,6 +133,9 @@ export default function KidsTab() {
       macs: draft.macs
         .map((m) => ({ mac: m.mac.trim(), label: m.label.trim() || undefined }))
         .filter((m) => m.mac),
+      ips: draft.ips
+        .map((i) => ({ ip: i.ip.trim(), label: i.label.trim() || undefined }))
+        .filter((i) => i.ip),
     };
     try {
       if (draft.id) {
@@ -207,6 +220,10 @@ export default function KidsTab() {
                 <div className="font-body text-xs text-ink-soft/70 mt-1 break-all">
                   {k.macs.length} MAC{k.macs.length === 1 ? "" : "s"}:{" "}
                   {k.macs.map((m) => m.mac).join(", ") || "—"}
+                </div>
+                <div className="font-body text-xs text-ink-soft/70 mt-1 break-all">
+                  {k.ips.length} IP{k.ips.length === 1 ? "" : "s"}:{" "}
+                  {k.ips.map((i) => i.ip).join(", ") || "—"}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -498,6 +515,58 @@ function KidForm({
           className="mt-3 pill bg-paper text-ocean-deep"
         >
           + add mac
+        </button>
+      </div>
+
+      <div>
+        <label className="block font-display font-semibold text-ink-soft mb-2">
+          static ip addresses
+        </label>
+        <p className="font-body text-xs text-ink-soft mb-2">
+          used by the daytime firewall-rule gate (drops WAN egress from these IPs).
+          set a DHCP reservation in UniFi or configure manually on each device.
+        </p>
+        <div className="space-y-2">
+          {draft.ips.map((entry, i) => (
+            <div key={i} className="flex gap-2 flex-wrap">
+              <input
+                value={entry.ip}
+                onChange={(e) => {
+                  const next = [...draft.ips];
+                  next[i] = { ...next[i], ip: e.target.value };
+                  update("ips", next);
+                }}
+                placeholder="192.168.1.100"
+                className="input-mono flex-1 min-w-[200px]"
+              />
+              <input
+                value={entry.label}
+                onChange={(e) => {
+                  const next = [...draft.ips];
+                  next[i] = { ...next[i], label: e.target.value };
+                  update("ips", next);
+                }}
+                placeholder="label"
+                className="input w-40"
+              />
+              <button
+                onClick={() => {
+                  const next = draft.ips.filter((_, j) => j !== i);
+                  update("ips", next.length ? next : [{ ip: "", label: "" }]);
+                }}
+                className="pill bg-paper text-ink-soft px-3"
+                title="Remove IP"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={() => update("ips", [...draft.ips, { ip: "", label: "" }])}
+          className="mt-3 pill bg-paper text-ocean-deep"
+        >
+          + add ip
         </button>
       </div>
 
