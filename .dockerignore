@@ -1,0 +1,28 @@
+# Keep the build context small and reproducible. The Dockerfile copies server/
+# and web/ explicitly (not `COPY .`), but trimming the context still avoids
+# shipping secrets, the DB, and deploy tooling into any build layer.
+**/node_modules
+.git
+.gitignore
+
+# Secrets never belong in an image layer.
+**/.env
+
+# Local SQLite data — must come from the bind mount, never baked in.
+data
+**/*.db
+**/*.db-wal
+**/*.db-shm
+
+# Build outputs are regenerated inside the Docker build stages.
+server/dist
+web/dist
+
+# CI + homelab deploy tooling — never part of the image.
+.github
+deploy
+.claude
+
+# Not needed at runtime.
+README.md
+**/.DS_Store

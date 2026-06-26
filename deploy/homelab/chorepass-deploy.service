@@ -1,0 +1,9 @@
+[Unit]
+Description=ChorePass auto-deploy (poll validated `live`, rebuild on change)
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/chorepass-deploy.sh

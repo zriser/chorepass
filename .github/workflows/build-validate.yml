@@ -1,0 +1,91 @@
+# CI-validated branch promotion for ChorePass.
+#
+# The homelab LXC (192.168.1.172) is behind NAT, so deploy is OUTBOUND polling,
+# not a webhook: GitHub Actions validates the real production build in the cloud
+# and, only on success, force-pushes the validated commit to a `live` branch. A
+# systemd timer on the LXC polls `live` and rebuilds. A broken build never
+# advances `live`, so it never reaches the host.
+#
+# ChorePass is a backend+DB app, so the gate is heavier than a static site's
+# `curl -> 200`: it boots the actual production image (compose, NODE_ENV=production,
+# SQLite on the volume) and asserts /api/health returns {"ok":true}. That proves
+# Express starts, runs migrations, opens the database, and serves — not just that
+# a file exists.
+#
+# See the claude-memory pattern "CI-Validated Branch Promotion + Pull-Based
+# Homelab Deploy" and deploy/homelab/ for the LXC half.
+
+name: build-validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Avoid stacked runs racing to promote the same branch.
+concurrency:
+  group: build-validate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Build the production image and health-check it
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Synthesize an ephemeral CI env
+        # docker-compose reads .env (gitignored) for ${VAR:?} substitution and
+        # REFUSES to start if any secret is unset. Generate throwaway values so the
+        # gate exercises the real prod fail-fast path. Pi-hole/UniFi creds are
+        # dummies and enforcement is off: /api/health only reads SQLite, so the
+        # boot never makes an outbound enforcement call.
+        run: |
+          printf '%s\n' \
+            "SESSION_SECRET=$(openssl rand -hex 48)" \
+            "PARENT_PIN_DEFAULT=0000" \
+            "PIHOLE_HOST=http://127.0.0.1" \
+            "PIHOLE_PW=ci-dummy" \
+            "UNIFI_HOST=http://127.0.0.1" \
+            "UNIFI_USER=ci" \
+            "UNIFI_PW=ci-dummy" \
+            "UNIFI_ENFORCEMENT_MODE=none" > .env
+
+      - name: Build and boot the real production image
+        run: docker compose up -d --build
+
+      - name: Assert /api/health returns ok
+        # Content-shape check, not a bare 200: a build that serves but throws on
+        # boot would still 404/500 here. Poll because the container needs a moment.
+        run: |
+          for i in $(seq 1 30); do
+            body="$(curl -fsS http://127.0.0.1:3000/api/health || true)"
+            echo "attempt $i: ${body:-<no response>}"
+            case "$body" in
+              *'"ok":true'*) echo "ChorePass is healthy"; exit 0 ;;
+            esac
+            sleep 2
+          done
+          echo "::error::ChorePass did not report healthy within ~60s"
+          docker compose logs --no-color || true
+          exit 1
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v || true
+
+  promote:
+    name: Promote the validated commit to live
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # GITHUB_TOKEN needs write to push the `live` branch
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # full history so the force-push to `live` isn't a shallow update
+
+      - name: Force-push HEAD to live
+        run: git push --force origin HEAD:refs/heads/live
