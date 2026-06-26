@@ -10,6 +10,7 @@ import {
   historyRetentionLimits,
   setHistoryRetentionDays,
 } from "../services/settings.js";
+import { PARENT_COOKIE, bumpSessionEpoch } from "../services/session.js";
 import { todayISO } from "../util/date.js";
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -45,6 +46,14 @@ router.post("/force-unblock", async (req, res) => {
   if (!exists) return res.status(404).json({ error: "kid not found" });
   const result = await gate.unblock(kidId, "manual");
   res.json({ ok: result.ok, kidId, gate: result });
+});
+
+// Log out every device, including this one, by advancing the session epoch.
+// Use after a PIN leak when you want even the current browser forced to re-auth.
+router.post("/logout-all-sessions", (_req, res) => {
+  const epoch = bumpSessionEpoch();
+  res.clearCookie(PARENT_COOKIE);
+  res.json({ ok: true, epoch });
 });
 
 router.get("/gate-status", (_req, res) => {

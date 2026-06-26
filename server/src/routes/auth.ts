@@ -2,12 +2,16 @@ import { Router } from "express";
 import bcrypt from "bcrypt";
 import { db } from "../db.js";
 import { config } from "../config.js";
+import {
+  PARENT_COOKIE,
+  bumpSessionEpoch,
+  issueParentCookie,
+  isParentAuthed,
+} from "../services/session.js";
 
 const router = Router();
 
 const SETTING_KEY = "parent_pin_hash";
-const COOKIE_NAME = "parent";
-const SESSION_DAYS = 30;
 
 export function ensureParentPin(): void {
   const row = db
@@ -33,17 +37,12 @@ router.post("/login", (req, res) => {
   if (!bcrypt.compareSync(pin, hash)) {
     return res.status(401).json({ error: "invalid pin" });
   }
-  res.cookie(COOKIE_NAME, "ok", {
-    httpOnly: true,
-    signed: true,
-    sameSite: "lax",
-    maxAge: SESSION_DAYS * 24 * 60 * 60 * 1000,
-  });
+  issueParentCookie(res);
   res.json({ ok: true });
 });
 
 router.post("/logout", (_req, res) => {
-  res.clearCookie(COOKIE_NAME);
+  res.clearCookie(PARENT_COOKIE);
   res.json({ ok: true });
 });
 
@@ -59,11 +58,15 @@ router.post("/change-pin", (req, res) => {
   }
   const newHash = bcrypt.hashSync(newPin, 10);
   db.prepare("UPDATE settings SET value = ? WHERE key = ?").run(newHash, SETTING_KEY);
+  // Changing the PIN ends every existing session (e.g. a device that still has
+  // the old PIN's cookie), then re-issues a cookie so THIS device stays signed in.
+  bumpSessionEpoch();
+  issueParentCookie(res);
   res.json({ ok: true });
 });
 
 router.get("/me", (req, res) => {
-  res.json({ authed: req.signedCookies?.[COOKIE_NAME] === "ok" });
+  res.json({ authed: isParentAuthed(req) });
 });
 
 export default router;
