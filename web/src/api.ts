@@ -93,6 +93,7 @@ export type GateStatus = {
   chores: { done: number; total: number };
   pointsToday: number;
 };
+export type EnforcementPause = { paused: boolean; until: string | null };
 export type GateLogRow = {
   id: number;
   kid_id: number | null;
