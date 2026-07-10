@@ -1,14 +1,156 @@
 import { useEffect, useState } from "react";
-import { api, ApiError } from "../../api.js";
+import { api, ApiError, type EnforcementPause } from "../../api.js";
+import { formatLocalDateTime } from "../../format.js";
 
 export default function SettingsTab() {
   return (
     <div className="space-y-6">
       <h2 className="font-display font-bold text-2xl">settings</h2>
+      <PauseEnforcementSection />
       <DailyScheduleSection />
       <HistoryRetentionSection />
       <ChangePinSection />
       <DeployConfigSection />
+    </div>
+  );
+}
+
+// Convert a datetime-local input value (local wall-clock, no zone) to a UTC ISO
+// string the server can store. Empty → null (pause with no end date).
+function localInputToIso(v: string): string | null {
+  if (!v.trim()) return null;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function PauseEnforcementSection() {
+  const [state, setState] = useState<EnforcementPause | null>(null);
+  const [until, setUntil] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      setState(await api.get<EnforcementPause>("/api/admin/enforcement-pause"));
+    } catch (e: any) {
+      setError(String(e.message ?? e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const pause = async () => {
+    setError(null);
+    if (until.trim() && new Date(until).getTime() <= Date.now()) {
+      setError("resume time must be in the future");
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.put<EnforcementPause & { unblocked: number }>(
+        "/api/admin/enforcement-pause",
+        { paused: true, until: localInputToIso(until) },
+      );
+      setState({ paused: r.paused, until: r.until });
+    } catch (e: any) {
+      setError(e instanceof ApiError ? e.message : String(e.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resume = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const r = await api.put<EnforcementPause>("/api/admin/enforcement-pause", {
+        paused: false,
+      });
+      setState({ paused: r.paused, until: r.until });
+      setUntil("");
+    } catch (e: any) {
+      setError(e instanceof ApiError ? e.message : String(e.message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="sticker-lg bg-paper-deep p-6 max-w-md">
+      <h3 className="font-display font-bold text-xl mb-1">pause enforcement</h3>
+      <p className="font-body text-sm text-ink-soft mb-5">
+        away mode. while paused, scheduled bedtime blocks and morning chore
+        enforcement are skipped and everyone is unblocked now — so nobody loses
+        internet while you're out. manual block/unblock still works, and it
+        resumes on its own at the time you set.
+      </p>
+
+      {loading ? (
+        <div className="font-display text-ink-soft/60">loading…</div>
+      ) : state?.paused ? (
+        <>
+          <div className="sticker bg-grape text-paper px-4 py-3 font-display animate-pop-in">
+            ⏸ paused —{" "}
+            {state.until ? (
+              <>resumes {formatLocalDateTime(state.until)}</>
+            ) : (
+              <>no end date (resume manually)</>
+            )}
+          </div>
+          {error && (
+            <div className="mt-4 sticker bg-tangerine text-paper px-4 py-2 font-display animate-shake-x">
+              {error}
+            </div>
+          )}
+          <div className="mt-5">
+            <button
+              onClick={resume}
+              disabled={busy}
+              className="pill bg-mint text-ink disabled:opacity-50"
+            >
+              {busy ? "resuming…" : "resume now"}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <label className="block">
+            <span className="block font-display font-semibold text-ink-soft text-sm mb-1">
+              resume at (optional)
+            </span>
+            <input
+              type="datetime-local"
+              value={until}
+              onChange={(e) => setUntil(e.target.value)}
+              className="input font-mono"
+            />
+            <span className="block font-body text-xs text-ink-soft/80 mt-1">
+              leave blank to pause with no end date — you resume it by hand.
+            </span>
+          </label>
+
+          {error && (
+            <div className="mt-4 sticker bg-tangerine text-paper px-4 py-2 font-display animate-shake-x">
+              {error}
+            </div>
+          )}
+
+          <div className="mt-5">
+            <button
+              onClick={pause}
+              disabled={busy}
+              className="pill bg-grape text-paper disabled:opacity-50"
+            >
+              {busy ? "pausing…" : "pause enforcement"}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

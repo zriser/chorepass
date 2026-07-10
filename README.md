@@ -139,6 +139,17 @@ The app resolves group IDs by name at runtime, so you can rename the groups via 
 - **At each kid's bedtime for the current weekday** — the per-(kid, weekday) cron job calls `gate.block`. Days left empty in the bedtime grid simply have no scheduled block.
 - Parents can force block/unblock from the **Today** tab at any time; that overrides the rule until the next scheduled event.
 
+### Away mode (pause enforcement)
+
+Going out of town and don't want a kid dropped offline at bedtime? **Settings → pause enforcement** turns the gate off temporarily:
+
+- While paused, every **scheduled block** is skipped — both the per-kid bedtimes and the morning chore-enforcement block. The morning reset and any chore-earned unblocks still run, and **manual** force-block/unblock from the Today tab still work (so a deliberate block during the pause is respected).
+- Enabling the pause **unblocks everyone immediately**, so nobody has to wait for the next scheduled event to come back online.
+- Set an optional **resume-at** time and it re-arms itself automatically once that time passes (evaluated lazily at each scheduled job — no separate wakeup). Leave it blank to pause with no end date and resume by hand.
+- The state lives in the `settings` table (`enforcement_pause_until`), so it survives a container restart. A banner on the **Today** tab shows when a pause is active with a one-click **resume now**.
+
+> Because the app is LAN-only, toggling this while you're away means reaching it over your home VPN (or however you normally get onto the LAN remotely).
+
 ## Security notes
 
 - This app is intended to run **LAN-only**. Don't expose it publicly. There is no rate limiting, no MFA, and the kid pages have no auth at all (URL = the auth).

@@ -9,6 +9,9 @@ import {
   getHistoryRetentionDays,
   historyRetentionLimits,
   setHistoryRetentionDays,
+  getEnforcementPause,
+  setEnforcementPause,
+  clearEnforcementPause,
 } from "../services/settings.js";
 import { PARENT_COOKIE, bumpSessionEpoch } from "../services/session.js";
 import { todayISO } from "../util/date.js";
@@ -148,6 +151,35 @@ router.put("/daily-schedule", (req, res) => {
   tx();
   const applied = scheduler.reloadDailySchedule();
   res.json({ ok: true, ...applied });
+});
+
+// "Away mode" — pause all scheduled blocks (morning enforcement + bedtimes).
+// Manual force-block/unblock and chore-earned unblocks still work.
+router.get("/enforcement-pause", (_req, res) => {
+  res.json(getEnforcementPause());
+});
+
+router.put("/enforcement-pause", async (req, res) => {
+  const paused = Boolean(req.body?.paused);
+  if (!paused) {
+    clearEnforcementPause();
+    return res.json({ ...getEnforcementPause(), unblocked: 0 });
+  }
+  // Enabling: `until` is an optional ISO datetime; omit/blank/null = indefinite.
+  const untilRaw = req.body?.until;
+  const until =
+    untilRaw === undefined || untilRaw === null || String(untilRaw).trim() === ""
+      ? null
+      : String(untilRaw);
+  try {
+    const state = setEnforcementPause(until);
+    // Take effect immediately: bring every kid back online now, rather than
+    // waiting for the next scheduled event that we're about to start skipping.
+    const results = await gate.unblockAll("manual");
+    res.json({ ...state, unblocked: results.filter((r) => r.ok).length });
+  } catch (e: any) {
+    res.status(400).json({ error: String(e?.message ?? e) });
+  }
 });
 
 router.get("/history-retention-days", (_req, res) => {

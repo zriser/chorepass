@@ -2,7 +2,7 @@ import cron, { ScheduledTask } from "node-cron";
 import { db } from "../db.js";
 import { config } from "../config.js";
 import { gate } from "./gate.js";
-import { getHistoryRetentionDays } from "./settings.js";
+import { getHistoryRetentionDays, isEnforcementPaused } from "./settings.js";
 import { todayISO } from "../util/date.js";
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -24,6 +24,12 @@ function scheduleKidBedtime(kidId: number, weekday: number, bedtime: string): Sc
   return cron.schedule(
     expr,
     async () => {
+      if (isEnforcementPaused()) {
+        console.log(
+          `[scheduler] bedtime block skipped kid=${kidId} weekday=${weekday} (${bedtime}) — enforcement paused`,
+        );
+        return;
+      }
       console.log(`[scheduler] bedtime block kid=${kidId} weekday=${weekday} (${bedtime})`);
       const r = await gate.block(kidId, "schedule");
       if (!r.ok) console.error(`[scheduler] bedtime block failed kid=${kidId}: ${r.error}`);
@@ -87,6 +93,10 @@ async function runUnblockAll() {
 }
 
 async function runBlockAll(label: string) {
+  if (isEnforcementPaused()) {
+    console.log(`[scheduler] ${label} skipped — enforcement paused`);
+    return;
+  }
   const results = await gate.blockAll("schedule");
   const failed = results.filter((r) => !r.ok);
   if (failed.length) {

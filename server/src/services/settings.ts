@@ -58,3 +58,60 @@ export const historyRetentionLimits = {
   max: MAX_HISTORY_RETENTION_DAYS,
   default: DEFAULT_HISTORY_RETENTION_DAYS,
 };
+
+// --- Enforcement pause ("away mode") -----------------------------------------
+// When paused, the scheduler skips every scheduled BLOCK (morning enforcement +
+// per-kid bedtimes). Resets/unblocks and manual parent actions still run, so a
+// deliberate block during the pause is respected. Stored as a single settings
+// key: absent/empty = active, "indefinite" = paused with no end, or an ISO
+// datetime = paused until that instant (auto-resumes lazily once it passes).
+const ENFORCEMENT_PAUSE_KEY = "enforcement_pause_until";
+
+export type EnforcementPause = { paused: boolean; until: string | null };
+
+export function clearEnforcementPause(): void {
+  db.prepare("DELETE FROM settings WHERE key = ?").run(ENFORCEMENT_PAUSE_KEY);
+}
+
+export function getEnforcementPause(): EnforcementPause {
+  const row = db
+    .prepare("SELECT value FROM settings WHERE key = ?")
+    .get(ENFORCEMENT_PAUSE_KEY) as { value: string } | undefined;
+  const raw = row?.value?.trim() ?? "";
+  if (!raw) return { paused: false, until: null };
+  if (raw === "indefinite") return { paused: true, until: null };
+  const untilMs = Date.parse(raw);
+  if (Number.isNaN(untilMs)) {
+    console.warn(`[settings] invalid ${ENFORCEMENT_PAUSE_KEY}="${raw}", clearing`);
+    clearEnforcementPause();
+    return { paused: false, until: null };
+  }
+  if (Date.now() >= untilMs) {
+    // The pause window elapsed — auto-resume by clearing the stale key.
+    clearEnforcementPause();
+    return { paused: false, until: null };
+  }
+  return { paused: true, until: new Date(untilMs).toISOString() };
+}
+
+export function isEnforcementPaused(): boolean {
+  return getEnforcementPause().paused;
+}
+
+// until === null → pause indefinitely; ISO datetime string → pause until then.
+export function setEnforcementPause(until: string | null): EnforcementPause {
+  let value: string;
+  if (until === null) {
+    value = "indefinite";
+  } else {
+    const ms = Date.parse(until);
+    if (Number.isNaN(ms)) throw new Error("until must be an ISO datetime or null");
+    if (ms <= Date.now()) throw new Error("until must be in the future");
+    value = new Date(ms).toISOString();
+  }
+  db.prepare(
+    `INSERT INTO settings (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(ENFORCEMENT_PAUSE_KEY, value);
+  return getEnforcementPause();
+}

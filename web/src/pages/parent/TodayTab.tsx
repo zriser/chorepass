@@ -1,19 +1,34 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type GateStatus } from "../../api.js";
+import { api, type GateStatus, type EnforcementPause } from "../../api.js";
 import { formatLocalDateTime } from "../../format.js";
 
 export default function TodayTab() {
   const [rows, setRows] = useState<GateStatus[] | null>(null);
+  const [pause, setPause] = useState<EnforcementPause | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setRows(await api.get<GateStatus[]>("/api/admin/gate-status"));
+      const [status, pauseState] = await Promise.all([
+        api.get<GateStatus[]>("/api/admin/gate-status"),
+        api.get<EnforcementPause>("/api/admin/enforcement-pause"),
+      ]);
+      setRows(status);
+      setPause(pauseState);
     } catch (e: any) {
       setError(String(e.message ?? e));
     }
   }, []);
+
+  const resumeEnforcement = async () => {
+    try {
+      await api.put("/api/admin/enforcement-pause", { paused: false });
+      await refresh();
+    } catch (e: any) {
+      setError(String(e.message ?? e));
+    }
+  };
 
   useEffect(() => {
     refresh();
@@ -60,6 +75,21 @@ export default function TodayTab() {
           reset today
         </button>
       </div>
+
+      {pause?.paused && (
+        <div className="sticker bg-grape text-paper p-4 mb-5 flex flex-wrap items-center justify-between gap-3 animate-pop-in">
+          <div className="font-display font-bold">
+            ⏸ enforcement paused — scheduled bedtime &amp; chore blocks are off
+            {pause.until ? `, resumes ${formatLocalDateTime(pause.until)}` : " (no end date)"}
+          </div>
+          <button
+            onClick={resumeEnforcement}
+            className="pill bg-mint text-ink shrink-0"
+          >
+            resume now
+          </button>
+        </div>
+      )}
 
       {rows.length === 0 && (
         <div className="font-body text-ink-soft italic">No kids yet.</div>
